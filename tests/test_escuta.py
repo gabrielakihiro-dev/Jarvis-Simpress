@@ -84,3 +84,34 @@ def test_palmas_em_microfone_com_ruido_alto():
 def test_voz_em_sala_barulhenta_conta_como_fala():
     c = CorteSilencio(ruido=0.3)
     assert c.minimo == 0.3
+
+
+# --- captura real do microfone AMD (data/palmas_debug.log): palmas com cauda de 150-250 ms ---
+PALMAS_REAIS = [0.151, 0.605, 0.555, 0.329, 0.167, 0.095, 0.379, 0.333, 0.521, 0.389, 0.298, 0.096]
+
+
+def test_palmas_reais_com_cauda_longa_disparam():
+    assert disparos(sequencia(CALMA) + PALMAS_REAIS + sequencia((QUIETO, 1500))) == 1
+
+
+def test_palmas_reais_com_limiar_padrao_disparam():
+    d = DetectorPalmas()
+    assert sum(d.alimentar(p) for p in sequencia(CALMA) + PALMAS_REAIS + sequencia((QUIETO, 1500))) == 1
+
+
+def test_palma_com_cauda_nao_conta_duas_vezes():
+    # uma palma só, com cauda e repique de 250 ms
+    assert disparos(sequencia(CALMA) + [0.6, 0.5, 0.3, 0.45, 0.3] + sequencia((QUIETO, 2000))) == 0
+
+
+def test_voz_plana_longa_nao_dispara():
+    # 250 ms sustentados, sem decair: fala, não palma
+    assert disparos(sequencia(CALMA) + [0.5] * 5 + sequencia((QUIETO, 150)) + [0.5] * 5 + sequencia((QUIETO, 1500))) == 0
+
+
+def test_dispara_em_menos_de_meio_segundo_depois_da_segunda_palma():
+    d = DetectorPalmas(limiar=0.25)
+    for p in sequencia(CALMA, (ALTO, 50), (QUIETO, 300), (ALTO, 50)):
+        d.alimentar(p)
+    espera = next(i for i in range(1, 20) if d.alimentar(QUIETO)) * 50
+    assert espera <= 450

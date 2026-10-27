@@ -23,7 +23,7 @@ Animações de 150–300 ms; desligue com `JARVIS_REDUZIR_MOVIMENTO=1`.
 
 Clique no orbe (ou 🎤), bata **duas palmas** ou diga **“Jarvis”**. Toca um bipe; fale e ele para sozinho depois de 2 s de silêncio (máximo 20 s).
 
-Palmas e “Jarvis” exigem a **Escuta ativa** (⚙ › Escuta ativa; fica salva como `JARVIS_ESCUTA=1` no `.env`). A palavra é reconhecida pelo Vosk com o modelo `modelos_voz/vosk-model-small-pt-0.3` (baixar de https://alphacephei.com/vosk/models e descompactar ali; a pasta fica fora do Git). Sem o modelo, palmas e clique continuam funcionando. Sensibilidade das palmas: `JARVIS_PALMAS_LIMIAR` (padrão 0.25). A escuta pausa enquanto o Jarvis fala, grava, espera a IA ou mostra um cartão de confirmação.
+Palmas e “Jarvis” exigem a **Escuta ativa** (⚙ › Escuta ativa; fica salva como `JARVIS_ESCUTA=1` no `.env`). A palavra é reconhecida pelo Vosk com o modelo `modelos_voz/vosk-model-small-pt-0.3` (baixar de https://alphacephei.com/vosk/models e descompactar ali; a pasta fica fora do Git). Sem o modelo, palmas e clique continuam funcionando. Sensibilidade das palmas: `JARVIS_PALMAS_LIMIAR` (padrão 0.2). A escuta pausa enquanto o Jarvis fala, grava, espera a IA ou mostra um cartão de confirmação.
 
 **Privacidade da escuta:** o áudio contínuo é analisado só neste computador e não é gravado. Só o trecho gravado **depois** do bipe vai ao modelo de transcrição do OpenRouter, como no 🎤.
 

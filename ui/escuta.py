@@ -79,19 +79,24 @@ def wav(pcm: bytes) -> bytes:
 class DetectorPalmas:
     """Recebe o pico de cada bloco de 50 ms e diz quando ouviu exatamente duas palmas.
 
-    Palma: 1 ou 2 blocos altos, com silêncio antes. Entre as duas: 120 a 700 ms.
-    Dispara depois de 700 ms de calma após a 2ª (uma 3ª palma cancela).
+    Palma: sequência de até 6 blocos acima do limiar (a cauda de eco/AGC do microfone dura 150-250 ms)
+    que começa forte e decai, depois de silêncio. Voz sustentada ou plana não decai: não conta.
+    Entre as duas: 120 a 700 ms. Dispara 400 ms depois da 2ª (uma 3ª palma cancela).
     """
 
     CALIBRACAO_MS = 2000
+    MAX_BLOCOS = 6          # acima de 300 ms é voz ou barulho, não palma
+    ESPERA_TERCEIRA_MS = 400
 
     def __init__(self, limiar: Optional[float] = None):
-        self.limiar = limiar if limiar is not None else float(os.environ.get("JARVIS_PALMAS_LIMIAR") or 0.25)
+        self.limiar = limiar if limiar is not None else float(os.environ.get("JARVIS_PALMAS_LIMIAR") or 0.2)
         self.ruido = 0.0
         self.t = 0
         self._alto = 0
         self._quieto_ms = 0
         self._quieto_antes = 0
+        self._inicio = 0
+        self._primeiro = self._pico = self._ultimo = 0.0
         self._palmas: list = []
 
     def limpar(self) -> None:
@@ -101,42 +106,46 @@ class DetectorPalmas:
     def alimentar(self, p: float) -> bool:
         self.t += BLOCO_MS
         efetivo = max(self.limiar, min(self.ruido * 6, 0.8))  # teto: microfone com ganho alto não pode tornar a palma impossível
-        if DEPURAR and (p >= 0.04 or self._alto):
+        if DEPURAR and (p >= 0.02 or self._alto):
             _depurar(f"bloco t={self.t} pico={p:.3f} limiar={efetivo:.3f} ruido={self.ruido:.3f} "
                      f"{'ALTO' if p >= efetivo else 'baixo'} seguidos={self._alto + (p >= efetivo)}")
         if p >= efetivo:
             if self._alto == 0:
-                self._quieto_antes = self._quieto_ms
+                self._quieto_antes, self._inicio = self._quieto_ms, self.t
+                self._primeiro = self._pico = p
             self._alto += 1
             self._quieto_ms = 0
-            if self._alto == 3:  # som longo (voz, batida de porta): não é palma
-                _depurar("descartado: som longo (3 blocos altos seguidos)")
+            self._pico, self._ultimo = max(self._pico, p), p
+            if self._alto == self.MAX_BLOCOS + 1:  # som longo (voz, batida de porta): não é palma
+                _depurar(f"descartado: som longo (mais de {self.MAX_BLOCOS} blocos altos)")
                 self._palmas.clear()
             return False
         self.ruido = p if self.ruido == 0 else self.ruido * 0.95 + p * 0.05
         blocos, self._alto = self._alto, 0
         self._quieto_ms += BLOCO_MS
-        if 1 <= blocos <= 2:
-            self._palma(self.t - BLOCO_MS * (blocos + 1))
-        if self._palmas and self.t - self._palmas[-1] > 700:
+        if 1 <= blocos <= self.MAX_BLOCOS:
+            self._palma(blocos)
+        espera = self.ESPERA_TERCEIRA_MS if len(self._palmas) >= 2 else 700
+        if self._palmas and self.t - self._palmas[-1] > espera:
             duas = len(self._palmas) == 2 and self.t > self.CALIBRACAO_MS
             _depurar(f"fim da janela: {len(self._palmas)} palma(s), calibrando={self.t <= self.CALIBRACAO_MS} -> {'DISPARA' if duas else 'nada'}")
             self._palmas.clear()
             return duas
         return False
 
-    def _palma(self, inicio: int) -> None:
-        if self._palmas and inicio - self._palmas[-1] < 120:
+    def _palma(self, blocos: int) -> None:
+        if blocos > 1 and not (self._primeiro >= 0.6 * self._pico and self._ultimo <= 0.75 * self._pico):
+            _depurar(f"rejeitado: não decai (1º={self._primeiro:.2f} pico={self._pico:.2f} último={self._ultimo:.2f})")
+            return
+        if self._palmas and self._inicio - self._palmas[-1] < 120:
             _depurar("ignorado: eco da mesma palma")
             return
-        if self._palmas:
-            self._palmas.append(inicio)
-            _depurar(f"palma {len(self._palmas)} aceita")
-        elif self._quieto_antes >= 150:
-            self._palmas.append(inicio)
-            _depurar("palma 1 aceita")
-        else:
-            _depurar(f"rejeitada: só {self._quieto_antes} ms de silêncio antes (precisa 150)")
+        minimo = BLOCO_MS if self._palmas else 2 * BLOCO_MS
+        if self._quieto_antes < minimo:
+            _depurar(f"rejeitada: só {self._quieto_antes} ms de silêncio antes (precisa {minimo})")
+            return
+        self._palmas.append(self._inicio)
+        _depurar(f"palma {len(self._palmas)} aceita ({blocos} blocos, pico {self._pico:.2f})")
 
 
 class CorteSilencio:
@@ -233,6 +242,7 @@ class Escuta(QObject):
         self._ignorar = 0
         self._detector = DetectorPalmas()
         self._vosk: Optional[VoskWorker] = None
+        self._dbg_pico, self._dbg_n = 0.0, 0
 
     @property
     def esta_gravando(self) -> bool:
@@ -360,6 +370,12 @@ class Escuta(QObject):
 
     def _bloco(self, bloco: bytes) -> None:
         p = pico(bloco)
+        if DEPURAR:  # 1 linha por segundo: o que o microfone entrega e em que estado a escuta está
+            self._dbg_pico, self._dbg_n = max(self._dbg_pico, p), self._dbg_n + 1
+            if self._dbg_n >= 20:
+                _depurar(f"1s: pico_max={self._dbg_pico:.4f} ligada={self.ligada} gravando={self._gravando} "
+                         f"pausas={sorted(self._pausas)} esfriando={self._ignorar}")
+                self._dbg_pico, self._dbg_n = 0.0, 0
         if self._gravando:
             self._buf += bloco
             fim = self._corte.alimentar(p)
