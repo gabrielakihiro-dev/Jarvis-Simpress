@@ -16,3 +16,7 @@ def test_trechos_primeira_frase_sozinha():
     assert all(len(p) < 300 for p in partes)
     assert " ".join(partes).split() == voice.limpar_markdown_para_fala(t).split()
     assert voice.trechos("**Pronto**") == ["Pronto"]
+
+
+def test_nao_cancela_nao_cancela():
+    assert not e_cancelar("não cancela")

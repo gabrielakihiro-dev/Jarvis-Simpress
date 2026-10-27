@@ -58,7 +58,7 @@ CANCELAR = {"cancelar", "cancela", "cancele", "cancelo", "cancelem"}
 def e_cancelar(texto: str) -> bool:
     """Frase curta com “cancelar” (ex.: “Jarvis, cancela”) cancela em vez de ir para a IA."""
     palavras = re.findall(r"\w+", texto.lower())
-    return 0 < len(palavras) <= 4 and bool(CANCELAR & set(palavras))
+    return 0 < len(palavras) <= 4 and bool(CANCELAR & set(palavras)) and "não" not in palavras
 
 
 class AgentWorker(QThread):
@@ -140,6 +140,7 @@ class ChatPanel(QFrame):
         self._mp3_atual = ""
         self._fila_fala: list = []
         self._cancelado = False  # descarta a transcrição ou resposta que ainda vai chegar
+        self._sem_volta = False  # alteração confirmada em execução: não dá mais para cancelar
         self._timer_lote = QTimer(self)
         self._timer_lote.setInterval(INTERVALO_LOTE_MS)
         self._timer_lote.timeout.connect(self._conferir_lote)
@@ -366,6 +367,7 @@ class ChatPanel(QFrame):
             else:
                 self._rodape("Importação cancelada. Nada foi copiado.")
             return
+        self._sem_volta = confirmado
         self._iniciar(lambda cb: self.llm.resolver_confirmacao(confirmado, callback_status=cb))
 
     def _iniciar(self, tarefa) -> None:
@@ -393,6 +395,9 @@ class ChatPanel(QFrame):
         if self.cartao.isVisible():
             self.cartao.btn_cancelar.click()
             return
+        if self._sem_volta and self._worker is not None and self._worker.isRunning():
+            self._rodape("A alteração já confirmada está em execução; não dá para cancelar.", erro=True)
+            return
         if any(t is not None and t.isRunning() for t in (self._worker, self._transcricao)):
             self._cancelado = True
             self.orbe.definir("ocioso")
@@ -401,12 +406,16 @@ class ChatPanel(QFrame):
     def _recebeu(self, r: Resposta) -> None:
         self._ocupado(False)
         self.orbe.definir("ocioso")
+        self._sem_volta = False
         if self._cancelado:
             if r.pendente:  # recusa a alteração pedida, para o histórico da IA não ficar pendurado
                 self._iniciar(lambda cb: self.llm.resolver_confirmacao(False, callback_status=cb))
                 return
             self._cancelado = False
             self._rodape("Cancelado.")
+            for ferramenta, resultado in r.dados:  # o arquivo já foi salvo: avisa mesmo cancelado
+                if ferramenta == "exportar_planilha":
+                    self._mostrar_exportacao(resultado)
             return
         if r.pendente:
             self._pedir_confirmacao(r.pendente["descricao"])
@@ -495,6 +504,7 @@ class ChatPanel(QFrame):
         self._parar_fala()
         self._fala = FalaWorker(texto, self)
         self._fala.pronto.connect(self._tocar)
+        self._fala.finished.connect(self._fala_acabou)
         self._fala.start()
 
     def _tocar(self, caminho: str) -> None:
@@ -517,9 +527,16 @@ class ChatPanel(QFrame):
 
     def _fim_fala(self, estado) -> None:
         if estado in (QMediaPlayer.MediaStatus.EndOfMedia, QMediaPlayer.MediaStatus.InvalidMedia):
+            proximo = self._fila_fala.pop(0) if self._fila_fala else ""
+            # entre trechos o orbe segue “falando” e a escuta segue pausada
+            seguindo = proximo or (self._fala is not None and self._fala.isRunning() and not self._fala.isInterruptionRequested())
+            self._apagar_mp3(liberar=not seguindo)
+            if proximo:
+                self._tocar(proximo)
+
+    def _fala_acabou(self) -> None:
+        if self.sender() is self._fala and not self._mp3_atual:
             self._apagar_mp3()
-            if self._fila_fala:
-                self._tocar(self._fila_fala.pop(0))
 
     def _parar_fala(self) -> None:
         if self._fala is not None:
@@ -533,7 +550,7 @@ class ChatPanel(QFrame):
         self._player.stop()
         self._apagar_mp3()
 
-    def _apagar_mp3(self) -> None:
+    def _apagar_mp3(self, liberar: bool = True) -> None:
         if self._mp3_atual:
             self._player.setSource(QUrl())
             try:
@@ -541,6 +558,8 @@ class ChatPanel(QFrame):
             except OSError:
                 pass
             self._mp3_atual = ""
+        if not liberar:
+            return
         if self.orbe.estado == "falando":
             self.orbe.definir("ocioso")
         self.escuta.pausar("fala", False)

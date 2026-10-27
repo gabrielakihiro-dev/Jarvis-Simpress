@@ -25,7 +25,8 @@ BLOCO_BYTES = TAXA * BLOCO_MS // 1000 * 2
 MODELO_VOZ = Path(__file__).resolve().parent.parent / "modelos_voz" / "vosk-model-small-pt-0.3"
 # "jarvis" não existe no vocabulário do modelo pt; "Jarvis" falado sai como "jarbas" ("árvores" pegava "abertos")
 PALAVRAS = {"jarbas", "cancelar"}
-GRAMATICA = ["jarbas", "cancelar", "[unk]"]
+# iscas: sem elas, "cancelei"/"cancelada" da própria fala do Jarvis viram "cancelar"
+GRAMATICA = ["jarbas", "cancelar", "cancelei", "cancelada", "cancelado", "cancelou", "cancelamento", "[unk]"]
 MICROFONE_MUDO = 0.001  # pico máximo de uma gravação inteira abaixo disso: microfone mudo, não pessoa calada
 
 
