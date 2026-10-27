@@ -1,32 +1,30 @@
 """Cliente de comunicação com a API local do Simpress (http://127.0.0.1:8000).
 
-Implementa as 6 ferramentas de leitura do inventário e a camada de sanitização
-de dados pessoais (LGPD) antes do envio para a inteligência artificial.
+Consulta o inventário, chamados e relatórios, e dispara as ações de escrita que
+o usuário confirmou. Aplica a sanitização de dados pessoais (LGPD) antes de
+qualquer dado seguir para a inteligência artificial.
 """
 
+import json
 import os
-from pathlib import Path
-import re
-import subprocess
-from typing import Any, Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional, Tuple
+
 import httpx
+
+from lgpd import limpar_texto_sensivel
 
 SIMPRESS_URL = os.environ.get("SIMPRESS_URL", "http://127.0.0.1:8000").rstrip("/")
 TIMEOUT = 10.0
+PORTAS_VARREDURA = range(8000, 8100)
+TIMEOUT_VARREDURA = 0.3
 
-# Padrões para limpeza de dados sensíveis em textos livres (chamados e anotações)
-EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
-PHONE_PATTERN = re.compile(r"(\(?\d{2}\)?\s?)?(\d{4,5}[-\s]?\d{4})")
+ROTINAS_VALIDAS = ("login", "os", "inventarios", "ambas", "usuarios", "sebrae")
+DECISOES_VALIDAS = ("permitir", "recusar", "remover", "manter")
 
-
-def limpar_texto_sensivel(texto: Any) -> str:
-    """Remove e-mails e telefones de textos livres para conformidade com a LGPD."""
-    if not texto:
-        return ""
-    limpo = str(texto)
-    limpo = EMAIL_PATTERN.sub("[E-MAIL OCULTADO]", limpo)
-    limpo = PHONE_PATTERN.sub("[TELEFONE OCULTADO]", limpo)
-    return limpo.strip()
+# Limites para o texto devolvido à IA não estourar o contexto do modelo.
+MAX_ITENS_LISTA = 20
+MAX_CARACTERES_RESPOSTA = 6000
 
 
 def sanitizar_equipamento(equip: Dict[str, Any]) -> Dict[str, Any]:
@@ -62,60 +60,154 @@ def sanitizar_chamado(chamado: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _aparar(dados: Any) -> Any:
+    """Corta listas longas e limpa e-mails/telefones de textos, recursivamente."""
+    if isinstance(dados, dict):
+        return {k: _aparar(v) for k, v in dados.items()}
+    if isinstance(dados, list):
+        aparado: List[Any] = [_aparar(v) for v in dados[:MAX_ITENS_LISTA]]
+        if len(dados) > MAX_ITENS_LISTA:
+            aparado.append(f"... mais {len(dados) - MAX_ITENS_LISTA} itens omitidos")
+        return aparado
+    if isinstance(dados, str):
+        return limpar_texto_sensivel(dados)
+    return dados
+
+
+def _limitar_tamanho(dados: Any) -> Any:
+    texto = json.dumps(dados, ensure_ascii=False)
+    if len(texto) <= MAX_CARACTERES_RESPOSTA:
+        return dados
+    return {"aviso": "Resposta grande, mostrando só o início.", "trecho": texto[:MAX_CARACTERES_RESPOSTA]}
+
+
 class SimpressClient:
-    """Cliente para consulta das rotas do Simpress."""
+    """Cliente para as rotas do Simpress, com descoberta automática da porta."""
 
-    def __init__(self, base_url: str = SIMPRESS_URL):
-        self.base_url = base_url
+    def __init__(self, base_url: Optional[str] = None, transport: Optional[httpx.BaseTransport] = None):
+        self.base_url = (base_url or SIMPRESS_URL).rstrip("/")
+        self._transport = transport  # usado nos testes
+        self._varredura_feita = False
 
-    def _client(self) -> httpx.Client:
-        return httpx.Client(base_url=self.base_url, timeout=TIMEOUT)
+    # --- infraestrutura -------------------------------------------------
+
+    def _client(self, timeout: float = TIMEOUT) -> httpx.Client:
+        return httpx.Client(base_url=self.base_url, timeout=timeout, transport=self._transport)
+
+    def _msg_offline(self) -> str:
+        return f"Simpress inacessível em {self.base_url}. O servidor está ligado? (iniciar_servidor.bat)"
+
+    @staticmethod
+    def _servidor_simpress(base_url: str, transport: Optional[httpx.BaseTransport], exigir_stats: bool) -> bool:
+        """True se `base_url` responde como o Simpress (JSON de /api/prontidao)."""
+        try:
+            with httpx.Client(base_url=base_url, timeout=TIMEOUT_VARREDURA, transport=transport) as c:
+                res = c.get("/api/prontidao")
+                if res.status_code != 200 or not isinstance(res.json(), dict):
+                    return False
+                if exigir_stats:
+                    stats = c.get("/api/stats")
+                    return stats.status_code == 200 and "total_equipamentos" in stats.json()
+                return True
+        except Exception:
+            return False
+
+    def descobrir(self) -> bool:
+        """Procura o Simpress: URL configurada primeiro, depois 127.0.0.1:8000–8099."""
+        if self._servidor_simpress(self.base_url, self._transport, exigir_stats=False):
+            return True
+        urls = [f"http://127.0.0.1:{p}" for p in PORTAS_VARREDURA]
+        urls = [u for u in urls if u != self.base_url]
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            achados = list(pool.map(lambda u: self._servidor_simpress(u, self._transport, True), urls))
+        for url, ok in zip(urls, achados):
+            if ok:
+                self.base_url = url
+                return True
+        return False
+
+    def _chamar(
+        self,
+        metodo: str,
+        caminho: str,
+        params: Optional[Dict[str, Any]] = None,
+        corpo: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, Any]:
+        """Faz a requisição. Devolve (ok, dados) ou (False, mensagem de erro em texto)."""
+        for tentativa in (1, 2):
+            try:
+                with self._client() as c:
+                    res = c.request(metodo, caminho, params=params, json=corpo)
+            except httpx.ConnectError:
+                # Sem conexão = nada foi enviado; seguro procurar outra porta e repetir.
+                if tentativa == 1 and not self._varredura_feita:
+                    self._varredura_feita = True
+                    if self.descobrir():
+                        continue
+                return False, self._msg_offline()
+            except httpx.TimeoutException:
+                return False, "O Simpress demorou demais para responder."
+            except Exception as e:
+                return False, f"Falha na comunicação com o Simpress: {e}"
+
+            if 200 <= res.status_code < 300:
+                try:
+                    return True, res.json()
+                except ValueError:
+                    return True, {}
+            return False, self._erro_http(res)
+        return False, self._msg_offline()
+
+    @staticmethod
+    def _erro_http(res: httpx.Response) -> str:
+        try:
+            detalhe = res.json().get("detail")
+        except Exception:
+            detalhe = None
+        if isinstance(detalhe, list):
+            detalhe = "; ".join(str(d.get("msg", d)) if isinstance(d, dict) else str(d) for d in detalhe)
+        texto = detalhe if isinstance(detalhe, str) else res.text[:200]
+        return f"Erro {res.status_code} do Simpress: {limpar_texto_sensivel(texto)}"
+
+    def _leitura(self, caminho: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """GET genérico: devolve os dados aparados ou {"erro": ...}."""
+        ok, dados = self._chamar("GET", caminho, params=params)
+        if not ok:
+            return {"erro": dados}
+        return {"dados": _limitar_tamanho(_aparar(dados))}
+
+    # --- consultas já existentes ----------------------------------------
 
     def consultar_equipamento(self, serial: str) -> Dict[str, Any]:
-        """Consulta os dados de um equipamento pelo número de série.
+        """Consulta um equipamento pelo número de série.
 
-        Aplica a regra de MacBooks do AGENTS.md (adiciona 'S' se necessário)
-        e fallback de busca por aproximação se o serial exato não for achado.
+        Aplica a regra de MacBooks do AGENTS.md (tenta o prefixo 'S' se não achar)
+        e, por último, busca por aproximação.
         """
         clean_serial = serial.strip().upper()
         if not clean_serial:
             return {"erro": "Número de série não informado."}
 
-        with self._client() as client:
-            # 1. Tentativa direta com o serial fornecido
-            try:
-                res = client.get(f"/api/equipamento/{clean_serial}")
-                if res.status_code == 200:
-                    return {"encontrado": True, "equipamento": sanitizar_equipamento(res.json())}
-            except httpx.ConnectError:
-                return {"erro": "Não foi possível conectar ao Simpress local (127.0.0.1:8000). O servidor está ligado?"}
-            except Exception as e:
-                return {"erro": f"Falha na consulta: {str(e)}"}
+        ok, dados = self._chamar("GET", f"/api/equipamento/{clean_serial}")
+        if ok and isinstance(dados, dict):
+            return {"encontrado": True, "equipamento": sanitizar_equipamento(dados)}
+        if not ok and "inacessível" in str(dados):
+            return {"erro": dados}
 
-            # 2. Regra de MacBooks: se não achou e não tem 'S', tenta com 'S' inicial
-            if not clean_serial.startswith("S"):
-                try:
-                    res_mac = client.get(f"/api/equipamento/S{clean_serial}")
-                    if res_mac.status_code == 200:
-                        dados = sanitizar_equipamento(res_mac.json())
-                        dados["observacao"] = f"Equipamento localizado na base oficial com o prefixo 'S' (S{clean_serial})."
-                        return {"encontrado": True, "equipamento": dados}
-                except Exception:
-                    pass
+        if not clean_serial.startswith("S"):
+            ok, dados = self._chamar("GET", f"/api/equipamento/S{clean_serial}")
+            if ok and isinstance(dados, dict):
+                resultado = sanitizar_equipamento(dados)
+                resultado["observacao"] = f"Equipamento localizado na base oficial com o prefixo 'S' (S{clean_serial})."
+                return {"encontrado": True, "equipamento": resultado}
 
-            # 3. Fallback: busca por correspondência parcial
-            try:
-                res_busca = client.get("/api/buscar", params={"q": clean_serial})
-                if res_busca.status_code == 200:
-                    itens = res_busca.json()
-                    if isinstance(itens, list) and len(itens) > 0:
-                        return {
-                            "encontrado": True,
-                            "observacao": "Série exata não localizada, mas encontramos correspondências aproximadas:",
-                            "correspondencias": [sanitizar_equipamento(item) for item in itens[:3]],
-                        }
-            except Exception:
-                pass
+        ok, itens = self._chamar("GET", "/api/buscar", params={"q": clean_serial})
+        if ok and isinstance(itens, list) and itens:
+            return {
+                "encontrado": True,
+                "observacao": "Série exata não localizada, mas encontramos correspondências aproximadas:",
+                "correspondencias": [sanitizar_equipamento(item) for item in itens[:3]],
+            }
 
         return {"encontrado": False, "mensagem": f"O equipamento com número de série '{serial}' não foi encontrado no cadastro oficial."}
 
@@ -126,7 +218,7 @@ class SimpressClient:
         categoria: Optional[str] = None,
         usuario: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Pesquisa equipamentos no catálogo com filtros por cidade, categoria ou status de usuário."""
+        """Pesquisa equipamentos com filtros por texto, cidade, categoria ou status de usuário."""
         params: Dict[str, Any] = {"limit": 15, "offset": 0}
         if termo:
             params["q"] = termo
@@ -136,206 +228,166 @@ class SimpressClient:
             params["categoria"] = categoria
         if usuario in ("sem", "com"):
             params["usuario"] = usuario
-
-        # Se não há termo e nem filtro de sem usuário, busca expandida requer listar_todos=true
         if not termo and usuario != "sem":
             params["listar_todos"] = "true"
 
-        with self._client() as client:
-            try:
-                res = client.get("/api/buscar-expandida", params=params)
-                if res.status_code == 200:
-                    dados = res.json()
-                    itens_brutos = dados.get("items", [])
-                    return {
-                        "total_encontrados": dados.get("total", 0),
-                        "itens": [sanitizar_equipamento(item) for item in itens_brutos],
-                    }
-                return {"erro": f"Erro na pesquisa (Código {res.status_code}): {res.text}"}
-            except httpx.ConnectError:
-                return {"erro": "Servidor Simpress inacessível em http://127.0.0.1:8000."}
-            except Exception as e:
-                return {"erro": f"Erro na busca: {str(e)}"}
+        ok, dados = self._chamar("GET", "/api/buscar-expandida", params=params)
+        if not ok:
+            return {"erro": dados}
+        return {
+            "total_encontrados": dados.get("total", 0),
+            "itens": [sanitizar_equipamento(item) for item in dados.get("items", [])],
+        }
 
     def obter_totais_inventario(self) -> Dict[str, Any]:
-        """Retorna os totais oficiais do cadastro da Simpress, unidades e pendências."""
-        with self._client() as client:
-            try:
-                res = client.get("/api/stats")
-                if res.status_code == 200:
-                    stats = res.json()
-                    return {
-                        "total_equipamentos_oficial": stats.get("total_equipamentos", 0),
-                        "total_unidades": stats.get("total_unidades", 0),
-                        "base_importada": stats.get("base_importada", False),
-                        "arquivo_origem": stats.get("arquivo_origem", ""),
-                        "ultima_atualizacao": stats.get("ultima_atualizacao", ""),
-                        "alteracoes_exportaveis": stats.get("total_alteracoes_exportaveis", 0),
-                    }
-                return {"erro": f"Não foi possível obter estatísticas ({res.status_code})."}
-            except httpx.ConnectError:
-                return {"erro": "Servidor Simpress local desconectado."}
-            except Exception as e:
-                return {"erro": str(e)}
+        """Totais oficiais do cadastro da Simpress."""
+        ok, stats = self._chamar("GET", "/api/stats")
+        if not ok:
+            return {"erro": stats}
+        return {
+            "total_equipamentos_oficial": stats.get("total_equipamentos", 0),
+            "total_unidades": stats.get("total_unidades", 0),
+            "base_importada": stats.get("base_importada", False),
+            "arquivo_origem": stats.get("arquivo_origem", ""),
+            "ultima_atualizacao": stats.get("ultima_atualizacao", ""),
+            "alteracoes_exportaveis": stats.get("total_alteracoes_exportaveis", 0),
+        }
 
     def listar_chamados_abertos(self) -> Dict[str, Any]:
-        """Retorna a lista atual de chamados e a relação com as ordens de serviço (OS)."""
-        with self._client() as client:
-            try:
-                res = client.get("/api/operacoes/chamados")
-                if res.status_code == 200:
-                    dados = res.json()
-                    chamados_brutos = dados.get("chamados", [])
-                    resumo = dados.get("resumo", {})
-                    return {
-                        "atualizado_em": dados.get("atualizado_em", ""),
-                        "total_chamados": len(chamados_brutos),
-                        "resumo": resumo,
-                        "chamados": [sanitizar_chamado(ch) for ch in chamados_brutos[:20]],
-                    }
-                return {"erro": f"Erro ao consultar chamados ({res.status_code})."}
-            except httpx.ConnectError:
-                return {"erro": "Servidor Simpress local desconectado."}
-            except Exception as e:
-                return {"erro": str(e)}
+        """Lista de chamados e a relação com as ordens de serviço (OS)."""
+        ok, dados = self._chamar("GET", "/api/operacoes/chamados")
+        if not ok:
+            return {"erro": dados}
+        chamados = dados.get("chamados", [])
+        return {
+            "atualizado_em": dados.get("atualizado_em", ""),
+            "total_chamados": len(chamados),
+            "resumo": dados.get("resumo", {}),
+            "chamados": [sanitizar_chamado(ch) for ch in chamados[:MAX_ITENS_LISTA]],
+        }
 
     def consultar_status_automacao(self) -> Dict[str, Any]:
-        """Verifica se há alguma rotina de automação no Google Chrome em andamento."""
-        with self._client() as client:
-            try:
-                res = client.get("/api/automacao/estado")
-                if res.status_code == 200:
-                    dados = res.json()
-                    return {
-                        "executando": dados.get("executando", False),
-                        "rotina": dados.get("rotina", "nenhuma"),
-                        "status": dados.get("status", "ocioso"),
-                        "progresso": dados.get("progresso", ""),
-                        "mensagem": dados.get("mensagem", ""),
-                    }
-                return {"erro": f"Erro ao verificar automação ({res.status_code})."}
-            except httpx.ConnectError:
-                return {"erro": "Servidor Simpress local desconectado."}
-            except Exception as e:
-                return {"erro": str(e)}
+        """Estado da rotina de automação em andamento (se houver)."""
+        ok, dados = self._chamar("GET", "/api/automacao/estado")
+        if not ok:
+            return {"erro": dados}
+        return {
+            "executando": dados.get("executando", False),
+            "rotina": dados.get("rotina", "nenhuma"),
+            "status": dados.get("status", "ocioso"),
+            "progresso": dados.get("progresso", ""),
+            "mensagem": dados.get("mensagem", ""),
+        }
 
     def consultar_ultima_comparacao(self) -> Dict[str, Any]:
-        """Consulta o resumo do último cruzamento de planilhas realizado no Simpress."""
-        with self._client() as client:
-            try:
-                res = client.get("/api/historico-comparacoes")
-                if res.status_code == 200:
-                    dados = res.json()
-                    eventos = dados.get("eventos", [])
-                    if not eventos:
-                        return {"mensagem": "Nenhum histórico de comparação registrado até o momento."}
-                    ultimo = eventos[0]
-                    return {
-                        "horario": ultimo.get("horario", ""),
-                        "tipo": ultimo.get("tipo", ""),
-                        "resumo_divergencias": ultimo.get("resumo", {}),
-                    }
-                return {"erro": f"Erro ao consultar histórico ({res.status_code})."}
-            except httpx.ConnectError:
-                return {"erro": "Servidor Simpress local desconectado."}
-            except Exception as e:
-                return {"erro": str(e)}
+        """Resumo do último cruzamento de planilhas."""
+        ok, dados = self._chamar("GET", "/api/historico-comparacoes")
+        if not ok:
+            return {"erro": dados}
+        eventos = dados.get("eventos", [])
+        if not eventos:
+            return {"mensagem": "Nenhum histórico de comparação registrado até o momento."}
+        ultimo = eventos[0]
+        return {
+            "horario": ultimo.get("horario", ""),
+            "tipo": ultimo.get("tipo", ""),
+            "resumo_divergencias": ultimo.get("resumo", {}),
+        }
+
+    # --- novas consultas (somente leitura) ------------------------------
+
+    def obter_painel(self) -> Dict[str, Any]:
+        return self._leitura("/api/painel")
+
+    def obter_prontidao(self) -> Dict[str, Any]:
+        return self._leitura("/api/prontidao")
+
+    def listar_pendencias_operacionais(self) -> Dict[str, Any]:
+        return self._leitura("/api/operacoes/pendencias")
+
+    def linha_do_tempo_chamados(self, serial: str) -> Dict[str, Any]:
+        serial = serial.strip().upper()
+        if not serial:
+            return {"erro": "Número de série não informado."}
+        return self._leitura(f"/api/operacoes/chamados/linha-do-tempo/{serial}")
+
+    def obter_relatorio_mensal(self, mes: str) -> Dict[str, Any]:
+        mes = mes.strip()
+        if len(mes) != 7 or mes[4] != "-":
+            return {"erro": "Informe o mês no formato AAAA-MM (ex.: 2026-10)."}
+        return self._leitura("/api/relatorio-mensal/dados", params={"mes": mes})
+
+    def listar_historico_automacao(self) -> Dict[str, Any]:
+        return self._leitura("/api/automacao/historico")
+
+    def resumo_sebrae(self) -> Dict[str, Any]:
+        return self._leitura("/api/automacao/sebrae/resumo")
+
+    def consultar_historico_comparacao(self, evento_id: str) -> Dict[str, Any]:
+        evento_id = evento_id.strip()
+        if not evento_id or "/" in evento_id:
+            return {"erro": "Identificador do histórico inválido."}
+        return self._leitura(f"/api/historico-comparacoes/{evento_id}")
+
+    def listar_unidades(self) -> Dict[str, Any]:
+        return self._leitura("/api/unidades")
+
+    def listar_transferencias(self) -> Dict[str, Any]:
+        return self._leitura("/api/historico-transferencias")
+
+    def listar_pendencias_usuarios(self) -> Dict[str, Any]:
+        return self._leitura("/api/usuarios/pendencias")
+
+    # --- ações que alteram dados (só após confirmação do usuário) -------
+
+    def _acao(self, caminho: str, corpo: Optional[Dict[str, Any]], sucesso: str) -> Dict[str, Any]:
+        ok, dados = self._chamar("POST", caminho, corpo=corpo)
+        if not ok:
+            return {"sucesso": False, "erro": dados}
+        return {"sucesso": True, "mensagem": sucesso}
 
     def executar_automacao(self, rotina: str) -> Dict[str, Any]:
-        """Dispara uma rotina de automação no Chrome (login, os, inventarios, ambas, usuarios, sebrae).
-
-        Prioriza a rota da API do servidor FastAPI (127.0.0.1:8000). Caso o servidor
-        esteja desligado, aciona diretamente o script Python de automação do projeto Simpress.
-        """
-        rotinas_validas = ("login", "os", "inventarios", "ambas", "usuarios", "sebrae")
+        """Dispara uma rotina de automação pelo servidor. Sem plano B: em erro, não executa."""
         rotina_clean = rotina.strip().lower()
-        if rotina_clean not in rotinas_validas:
-            return {
-                "sucesso": False,
-                "erro": f"Rotina inválida: '{rotina}'. Opções aceitas: {', '.join(rotinas_validas)}.",
-            }
-
-        # 1. Tenta acionar via API do servidor Simpress
-        with self._client() as client:
-            try:
-                res = client.post("/api/automacao/executar", json={"rotina": rotina_clean})
-                if res.status_code in (200, 202):
-                    return {
-                        "sucesso": True,
-                        "metodo": "api_simpress",
-                        "rotina": rotina_clean,
-                        "mensagem": f"Rotina de automação '{rotina_clean}' disparada com sucesso via servidor Simpress.",
-                    }
-                elif res.status_code == 409:
-                    return {
-                        "sucesso": False,
-                        "erro": "Já existe uma automação em andamento no momento. Aguarde o término ou use cancelar.",
-                    }
-            except httpx.ConnectError:
-                pass  # Servidor Simpress não está respondendo na porta 8000, usa fallback local
-            except Exception as e:
-                pass
-
-        # 2. Fallback: Disparo direto do script Python do Simpress
-        simpress_dir = Path(r"C:\Users\Gabriel\Desktop\Simpress")
-        py_exe = simpress_dir / ".venv" / "Scripts" / "python.exe"
-        script = simpress_dir / "scripts" / "automacao_rotinas_chrome.py"
-
-        if not py_exe.is_file() or not script.is_file():
-            return {
-                "sucesso": False,
-                "erro": "Ambiente de automação do Simpress não localizado em C:\\Users\\Gabriel\\Desktop\\Simpress.",
-            }
-
-        flags = 0
-        if os.name == "nt":
-            flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-
-        try:
-            subprocess.Popen(
-                [str(py_exe), str(script), "--rotina", rotina_clean],
-                cwd=str(simpress_dir),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=flags,
-                close_fds=True,
-            )
-            return {
-                "sucesso": True,
-                "metodo": "script_direto",
-                "rotina": rotina_clean,
-                "mensagem": f"Rotina de automação '{rotina_clean}' iniciada com sucesso no Chrome de automação (porta 9333).",
-            }
-        except Exception as e:
-            return {"sucesso": False, "erro": f"Falha ao iniciar o script de automação: {str(e)}"}
+        if rotina_clean not in ROTINAS_VALIDAS:
+            return {"sucesso": False, "erro": f"Rotina inválida: '{rotina}'. Opções aceitas: {', '.join(ROTINAS_VALIDAS)}."}
+        ok, dados = self._chamar("POST", "/api/automacao/executar", corpo={"rotina": rotina_clean})
+        if not ok:
+            if "Erro 409" in str(dados):
+                return {"sucesso": False, "erro": "Já existe uma automação em andamento. Aguarde o término ou cancele."}
+            return {"sucesso": False, "erro": dados}
+        return {"sucesso": True, "rotina": rotina_clean, "mensagem": f"Rotina '{rotina_clean}' disparada pelo servidor Simpress."}
 
     def cancelar_automacao(self) -> Dict[str, Any]:
-        """Solicita o cancelamento seguro de qualquer rotina de automação em execução."""
-        # 1. Tenta via API do servidor
-        with self._client() as client:
-            try:
-                res = client.post("/api/automacao/cancelar")
-                if res.status_code in (200, 202):
-                    return {"sucesso": True, "mensagem": "Cancelamento solicitado com sucesso ao servidor Simpress."}
-            except Exception:
-                pass
+        return self._acao("/api/automacao/cancelar", None, "Cancelamento solicitado ao servidor Simpress.")
 
-        # 2. Fallback: sinaliza via script --cancelar
-        simpress_dir = Path(r"C:\Users\Gabriel\Desktop\Simpress")
-        py_exe = simpress_dir / ".venv" / "Scripts" / "python.exe"
-        script = simpress_dir / "scripts" / "automacao_rotinas_chrome.py"
+    def atualizar_apelido(self, serial: str, apelido: str) -> Dict[str, Any]:
+        serial, apelido = serial.strip().upper(), apelido.strip()
+        if not serial:
+            return {"sucesso": False, "erro": "Número de série não informado."}
+        if len(apelido) > 160:
+            return {"sucesso": False, "erro": "O apelido pode ter no máximo 160 caracteres."}
+        return self._acao(
+            "/api/equipamento/atualizar-apelido", {"serial": serial, "apelido": apelido},
+            f"Apelido do serial {serial} atualizado.",
+        )
 
-        if py_exe.is_file() and script.is_file():
-            try:
-                subprocess.run(
-                    [str(py_exe), str(script), "--cancelar"],
-                    cwd=str(simpress_dir),
-                    capture_output=True,
-                    timeout=10,
-                )
-                return {"sucesso": True, "mensagem": "Sinal de cancelamento enviado à rotina de automação."}
-            except Exception as e:
-                return {"sucesso": False, "erro": f"Erro ao cancelar: {str(e)}"}
+    def atualizar_usuario(self, serial: str, usuario: str) -> Dict[str, Any]:
+        serial, usuario = serial.strip().upper(), usuario.strip()
+        if not serial:
+            return {"sucesso": False, "erro": "Número de série não informado."}
+        return self._acao(
+            "/api/equipamento/atualizar-usuario", {"serial": serial, "usuario": usuario},
+            f"Usuário do serial {serial} atualizado.",
+        )
 
-        return {"sucesso": False, "erro": "Não foi possível enviar o sinal de cancelamento."}
+    def decidir_pendencia_usuario(self, pendencia_id: str, decisao: str) -> Dict[str, Any]:
+        pendencia_id, decisao = str(pendencia_id).strip(), decisao.strip().lower()
+        if decisao not in DECISOES_VALIDAS:
+            return {"sucesso": False, "erro": f"Decisão inválida. Opções: {', '.join(DECISOES_VALIDAS)}."}
+        if not pendencia_id or "/" in pendencia_id:
+            return {"sucesso": False, "erro": "Identificador da pendência inválido."}
+        return self._acao(
+            f"/api/usuarios/pendencias/{pendencia_id}/decidir", {"decisao": decisao},
+            f"Pendência {pendencia_id}: decisão '{decisao}' registrada.",
+        )

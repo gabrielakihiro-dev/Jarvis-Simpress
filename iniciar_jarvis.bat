@@ -12,6 +12,7 @@ if not exist ".venv" (
 )
 echo [2/3] Ativando ambiente virtual...
 call ".venv\Scripts\activate.bat"
+python -m pip install -q -r requirements.txt
 echo [3/3] Abrindo Interface Futurista PyQt5...
 echo.
 python jarvis_ui.py

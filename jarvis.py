@@ -10,7 +10,7 @@ from rich import print as rprint
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.prompt import Prompt
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 # Carrega variáveis de ambiente do .env nesta pasta
@@ -23,13 +23,13 @@ import voice
 console = Console()
 
 
-def exibir_banner(modelo_ativo: str, voz_ativa: bool):
+def exibir_banner(modelo_ativo: str, voz_ativa: bool, url_simpress: str = "http://127.0.0.1:8000"):
     """Exibe o cabeçalho inicial do Jarvis no terminal."""
     status_voz = "[bold green]LIGADA[/bold green]" if voz_ativa else "[dim]DESLIGADA[/dim]"
     info = (
         f"[bold cyan]Modelo Ativo:[/bold cyan] {modelo_ativo}\n"
         f"[bold cyan]Voz (Edge-TTS):[/bold cyan] {status_voz}\n"
-        f"[bold cyan]Simpress Local:[/bold cyan] http://127.0.0.1:8000\n\n"
+        f"[bold cyan]Simpress Local:[/bold cyan] {url_simpress}\n\n"
         "[dim]Comandos rápidos: [bold]/modelos[/bold] (trocar IA) | [bold]/voz[/bold] (ligar/desligar áudio) | [bold]/ajuda[/bold] | [bold]sair[/bold][/dim]"
     )
     console.print(Panel(info, title="🤖 [bold white]JARVIS SIMPRESS[/bold white]", border_style="blue", expand=False))
@@ -105,9 +105,9 @@ def main():
     # Checagem do Simpress
     simpress_online = checar_status_simpress(simpress)
     if not simpress_online:
-        console.print("[dim yellow]Aviso: O Simpress local em http://127.0.0.1:8000 parece estar desligado no momento.\n(Você pode conversar, mas as ferramentas de consulta ao inventário só funcionarão quando o Simpress for iniciado).[/dim yellow]\n")
+        console.print(f"[dim yellow]Aviso: O Simpress local em {simpress.base_url} parece estar desligado no momento.\n(Você pode conversar, mas as ferramentas de consulta ao inventário só funcionarão quando o Simpress for iniciado).[/dim yellow]\n")
 
-    exibir_banner(llm.modelo_principal, voice.HABILITAR_VOZ)
+    exibir_banner(llm.modelo_principal, voice.HABILITAR_VOZ, simpress.base_url)
 
     while True:
         try:
@@ -163,19 +163,32 @@ def main():
             def atualizar_spinner(msg: str):
                 spinner.update(f"[bold cyan]{msg}[/bold cyan]")
 
-            resposta_texto, ferramentas = llm.enviar_mensagem(pergunta, callback_status=atualizar_spinner)
+            resposta = llm.enviar_mensagem(pergunta, callback_status=atualizar_spinner)
+
+            # Alterações só acontecem depois da confirmação do usuário.
+            while resposta.pendente:
+                spinner.stop()
+                console.print(Panel(
+                    resposta.pendente["descricao"],
+                    title="Confirmar alteração",
+                    border_style="yellow",
+                    expand=False,
+                ))
+                aceitou = Confirm.ask("Confirmar e executar?", default=False)
+                spinner.start()
+                resposta = llm.resolver_confirmacao(aceitou, callback_status=atualizar_spinner)
 
         # Exibe quais ferramentas foram acionadas (se houver)
-        if ferramentas:
-            ferramentas_fmt = ", ".join(f"[bold cyan]{f}[/bold cyan]" for f in ferramentas)
+        if resposta.ferramentas:
+            ferramentas_fmt = ", ".join(f"[bold cyan]{f}[/bold cyan]" for f in resposta.ferramentas)
             console.print(f"[dim]Ferramentas acionadas: {ferramentas_fmt}[/dim]")
 
         # Exibe a resposta formatada
         console.print("\n[bold blue]🤖 Jarvis:[/bold blue]")
-        console.print(Markdown(resposta_texto))
+        console.print(Markdown(resposta.texto))
 
-        # Fala por áudio
-        voice.falar(resposta_texto)
+        # A voz usa o texto mascarado: o Edge-TTS envia o texto à Microsoft.
+        voice.falar(resposta.texto_voz)
 
 
 if __name__ == "__main__":

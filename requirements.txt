@@ -4,4 +4,4 @@ python-dotenv>=1.0.0
 edge-tts>=6.1.10
 rich>=13.7.0
 PyQt5>=5.15.11
-customtkinter>=6.0.0
+PyQtWebEngine>=5.15.7
