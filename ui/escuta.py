@@ -26,6 +26,7 @@ MODELO_VOZ = Path(__file__).resolve().parent.parent / "modelos_voz" / "vosk-mode
 # "jarvis" não existe no vocabulário do modelo pt; "Jarvis" falado sai como "jarbas" ("árvores" pegava "abertos")
 PALAVRAS = {"jarbas"}
 GRAMATICA = ["jarbas", "[unk]"]
+MICROFONE_MUDO = 0.001  # pico abaixo disso em 3 s seguidos: silêncio digital, não sala quieta
 
 
 # --- lógica pura (testada sem microfone) -----------------------------------
@@ -296,6 +297,7 @@ class Escuta(QObject):
             self.aviso.emit("O microfone usa um formato de áudio que o Jarvis ainda não lê.")
             return False
         self._fmt, self._cru, self._resto = fmt, b"", b""
+        self._checar, self._max_inicio = 3000 // BLOCO_MS, 0.0  # 3 s para ver se o microfone entrega som
         self._fonte = QAudioSource(entrada, fmt, self)
         self._dev = self._fonte.start()
         self._dev.readyRead.connect(self._ler)
@@ -323,6 +325,12 @@ class Escuta(QObject):
 
     def _bloco(self, bloco: bytes) -> None:
         p = pico(bloco)
+        if self._checar:
+            self._max_inicio = max(self._max_inicio, p)
+            self._checar -= 1
+            if not self._checar and self._max_inicio < MICROFONE_MUDO:
+                self.aviso.emit("O microfone está entregando silêncio (mudo, volume zero ou bloqueado no Windows). "
+                                "Palmas, “Jarvis” e o 🎤 não vão funcionar até ele captar som.")
         if self._gravando:
             self._buf += bloco
             fim = self._corte.alimentar(p)
