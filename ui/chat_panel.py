@@ -173,6 +173,7 @@ class ChatPanel(QFrame):
     def _limpar(self) -> None:
         self.llm.limpar_historico()
         self.cartao.hide()
+        self._ocupado(False)
         self.texto.clear()
         self._mensagem("Jarvis", "Conversa reiniciada.")
 
@@ -204,6 +205,8 @@ class ChatPanel(QFrame):
         self._ocupado(False)
         if r.pendente:
             self._mensagem("Jarvis", "Preciso da sua confirmação para continuar.")
+            self._ocupado(True)  # nada de nova pergunta até confirmar ou cancelar
+            self.btn_enviar.setText("Enviar")
             self.cartao.mostrar(r.pendente["descricao"])
             self._rodape("Aguardando sua confirmação.")
             return

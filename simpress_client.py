@@ -272,11 +272,12 @@ class SimpressClient:
         if not ok:
             return {"erro": dados}
         return {
-            "executando": dados.get("executando", False),
-            "rotina": dados.get("rotina", "nenhuma"),
-            "status": dados.get("status", "ocioso"),
-            "progresso": dados.get("progresso", ""),
-            "mensagem": dados.get("mensagem", ""),
+            "executando": dados.get("estado") == "em_andamento",
+            "rotina": dados.get("rotina") or "nenhuma",
+            "estado": dados.get("estado", "livre"),
+            "inicio": dados.get("inicio", ""),
+            "aguardando_login": bool(dados.get("aguardando_login")),
+            "cancelamento_pedido": bool(dados.get("cancelamento_pedido")),
         }
 
     def consultar_ultima_comparacao(self) -> Dict[str, Any]:

@@ -132,9 +132,9 @@ class JarvisShell(QMainWindow):
         lay = QHBoxLayout(hud)
         lay.setContentsMargins(theme.SP["lg"], theme.SP["sm"], theme.SP["lg"], theme.SP["sm"])
         lay.setSpacing(theme.SP["lg"])
-        logo = QLabel("J.A.R.V.I.S.")
-        logo.setObjectName("logo")
-        lay.addWidget(logo)
+        self.logo = QLabel("J.A.R.V.I.S.")
+        self.logo.setObjectName("logo")
+        lay.addWidget(self.logo)
         self.ind_servidor = IndicadorStatus("Simpress")
         self.ind_equip = IndicadorStatus("Equipamentos")
         self.ind_chamados = IndicadorStatus("Chamados")
@@ -229,6 +229,7 @@ class JarvisShell(QMainWindow):
             icone, rotulo, _ = TELAS[i]
             b.setText(icone if compacto else f"{icone}  {rotulo}")
         self.menu.setFixedWidth(56 if compacto else 230)
+        self.logo.setVisible(not compacto)
         self.ind_ia.setVisible(not compacto)  # sem espaço no HUD estreito; o estado da IA aparece no chat
         self.btn_chat.setText("Chat" if compacto else "Assistente (Ctrl+J)")
         if compacto:

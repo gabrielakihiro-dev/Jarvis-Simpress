@@ -95,3 +95,14 @@ def test_leitura_apara_listas_e_limpa_email():
     dados = cliente(handler).listar_unidades()["dados"]
     assert len(dados["itens"]) == simpress_client.MAX_ITENS_LISTA + 1
     assert "@" not in json.dumps(dados)
+
+
+def test_estado_automacao_usa_chaves_reais_do_simpress():
+    corpos = {
+        "em_andamento": {"estado": "em_andamento", "rotina": "os", "inicio": "10:00", "aguardando_login": True},
+        "livre": {"estado": "livre", "rotina": ""},
+    }
+    for estado, corpo in corpos.items():
+        res = cliente(lambda req, c=corpo: httpx.Response(200, json=c)).consultar_status_automacao()
+        assert res["executando"] is (estado == "em_andamento")
+    assert res["rotina"] == "nenhuma"
