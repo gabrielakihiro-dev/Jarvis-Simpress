@@ -4,8 +4,8 @@ import html
 import os
 from typing import Callable, Optional
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtWidgets import (
     QComboBox,
     QFrame,
     QGridLayout,
@@ -124,7 +124,7 @@ class ChatPanel(QFrame):
         self.rodape.setWordWrap(True)
         self.rodape.setAccessibleName("Estado do assistente")
         lay.addWidget(self.rodape)
-        lay.addWidget(self.btn_limpar, 0, Qt.AlignLeft)
+        lay.addWidget(self.btn_limpar, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.setTabOrder(self.combo, self.texto)
         self.setTabOrder(self.texto, self.campo)

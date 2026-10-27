@@ -3,17 +3,16 @@
 import html
 import re
 
-from PyQt5.QtCore import QPropertyAnimation, Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import QPropertyAnimation, Qt, pyqtSignal
+from PyQt6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QShortcut,
     QVBoxLayout,
 )
-from PyQt5.QtGui import QKeySequence
+from PyQt6.QtGui import QKeySequence, QShortcut
 
 from ui import theme
 
@@ -28,7 +27,7 @@ class IndicadorStatus(QLabel):
         super().__init__(parent)
         self._rotulo = rotulo
         self.definir("neutro", "—")
-        self.setTextFormat(Qt.RichText)
+        self.setTextFormat(Qt.TextFormat.RichText)
 
     def definir(self, nivel: str, valor: str) -> None:
         cor = _COR_NIVEL[nivel]
@@ -46,7 +45,7 @@ def botao(texto: str, papel: str = "", dica: str = "", nome: str = "") -> QPushB
     if dica:
         b.setToolTip(dica)
     b.setAccessibleName(nome or dica or texto)
-    b.setCursor(Qt.PointingHandCursor)
+    b.setCursor(Qt.CursorShape.PointingHandCursor)
     return b
 
 
@@ -85,7 +84,7 @@ class CartaoConfirmacao(QFrame):
         aviso.setObjectName("aviso")
         self._texto = QLabel()
         self._texto.setWordWrap(True)
-        self._texto.setTextInteractionFlags(Qt.NoTextInteraction)
+        self._texto.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         linha = QHBoxLayout()
         self.btn_ok = botao("Confirmar e executar", "primario")
         self.btn_cancelar = botao("Cancelar")
@@ -97,8 +96,8 @@ class CartaoConfirmacao(QFrame):
         lay.addLayout(linha)
         self.btn_ok.clicked.connect(lambda: self._decidir(True))
         self.btn_cancelar.clicked.connect(lambda: self._decidir(False))
-        esc = QShortcut(QKeySequence(Qt.Key_Escape), self)
-        esc.setContext(Qt.WidgetWithChildrenShortcut)
+        esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         esc.activated.connect(lambda: self._decidir(False))
         self._efeito = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._efeito)

@@ -1,6 +1,6 @@
 # J.A.R.V.I.S — Assistente operacional do Simpress
 
-Casca desktop (PyQt5) com visual HUD escuro/ciano que reúne, numa só janela, as telas reais do Simpress e um assistente de IA (OpenRouter) com acesso às funções do servidor local.
+Casca desktop (PyQt6) com visual HUD escuro/ciano que reúne, numa só janela, as telas reais do Simpress e um assistente de IA (OpenRouter) com acesso às funções do servidor local.
 
 ## Como iniciar
 

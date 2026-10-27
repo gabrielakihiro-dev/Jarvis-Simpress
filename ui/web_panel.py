@@ -2,10 +2,10 @@
 
 import json
 
-from PyQt5.QtCore import Qt, QUrl, pyqtSignal
-from PyQt5.QtGui import QDesktopServices
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QStackedLayout, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QStackedLayout, QVBoxLayout, QWidget
 
 from ui import theme
 from ui.widgets import botao
@@ -56,23 +56,23 @@ class WebPanel(QWidget):
     def _criar_offline(self) -> QWidget:
         w = QWidget()
         lay = QVBoxLayout(w)
-        lay.setAlignment(Qt.AlignCenter)
+        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         titulo = QLabel("✕ O Simpress está desligado")
         titulo.setObjectName("titulo")
-        titulo.setAlignment(Qt.AlignCenter)
+        titulo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ajuda = QLabel(
             "Para usar as telas, ligue o servidor: abra a pasta do Simpress e execute "
             "<b>iniciar_servidor.bat</b>. O Jarvis encontra a porta sozinho."
         )
         ajuda.setObjectName("secundario")
         ajuda.setWordWrap(True)
-        ajuda.setAlignment(Qt.AlignCenter)
+        ajuda.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ajuda.setMaximumWidth(480)
         self.btn_retry = botao("Procurar de novo", "primario")
         self.btn_retry.clicked.connect(self.tentar_de_novo)
         for x in (titulo, ajuda):
-            lay.addWidget(x, 0, Qt.AlignCenter)
-        lay.addWidget(self.btn_retry, 0, Qt.AlignCenter)
+            lay.addWidget(x, 0, Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.btn_retry, 0, Qt.AlignmentFlag.AlignCenter)
         return w
 
     # --- estado -----------------------------------------------------------

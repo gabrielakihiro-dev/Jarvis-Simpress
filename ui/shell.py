@@ -1,13 +1,12 @@
 """Janela principal do Jarvis: HUD de status, menu das telas do Simpress, web e chat."""
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QShortcut,
     QVBoxLayout,
     QWidget,
 )
@@ -167,8 +166,8 @@ class JarvisShell(QMainWindow):
 
     def _atalhos(self) -> None:
         for i in range(8):
-            QShortcut(QKeySequence(f"F{i + 1}"), self, activated=lambda n=i: self._selecionar(n)).setContext(Qt.ApplicationShortcut)
-        QShortcut(QKeySequence("Ctrl+J"), self, activated=self._alternar_chat).setContext(Qt.ApplicationShortcut)
+            QShortcut(QKeySequence(f"F{i + 1}"), self, activated=lambda n=i: self._selecionar(n)).setContext(Qt.ShortcutContext.ApplicationShortcut)
+        QShortcut(QKeySequence("Ctrl+J"), self, activated=self._alternar_chat).setContext(Qt.ShortcutContext.ApplicationShortcut)
 
     # --- comportamento ----------------------------------------------------
 
