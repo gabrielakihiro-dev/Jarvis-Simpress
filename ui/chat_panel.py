@@ -2,6 +2,7 @@
 
 import html
 import os
+import re
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -51,6 +52,13 @@ SUGESTOES = {
 
 INTERVALO_LOTE_MS = 5000
 TENTATIVAS_LOTE = 60  # 5 min
+CANCELAR = {"cancelar", "cancela", "cancele", "cancelo", "cancelem"}
+
+
+def e_cancelar(texto: str) -> bool:
+    """Frase curta com “cancelar” (ex.: “Jarvis, cancela”) cancela em vez de ir para a IA."""
+    palavras = re.findall(r"\w+", texto.lower())
+    return 0 < len(palavras) <= 4 and bool(CANCELAR & set(palavras))
 
 
 class AgentWorker(QThread):
@@ -80,16 +88,23 @@ class ModelosWorker(QThread):
 
 
 class FalaWorker(QThread):
-    """Gera o mp3 da fala fora da tela; o painel toca com QMediaPlayer."""
+    """Gera a fala trecho a trecho fora da tela; o painel toca cada mp3 assim que chega."""
 
-    pronto = pyqtSignal(str)
+    pronto = pyqtSignal(str)  # um mp3 por trecho; "" se o primeiro falhar
 
     def __init__(self, texto: str, parent=None):
         super().__init__(parent)
         self._texto = texto
 
     def run(self) -> None:
-        self.pronto.emit(voice.gerar_mp3(self._texto) or "")
+        for i, trecho in enumerate(voice.trechos(self._texto)):
+            if self.isInterruptionRequested():
+                return
+            caminho = voice.gerar_mp3(trecho)
+            if caminho or i == 0:
+                self.pronto.emit(caminho or "")
+            if not caminho:
+                return
 
 
 class TranscreveWorker(QThread):
@@ -123,6 +138,8 @@ class ChatPanel(QFrame):
         self._player.setAudioOutput(self._saida)
         self._player.mediaStatusChanged.connect(self._fim_fala)
         self._mp3_atual = ""
+        self._fila_fala: list = []
+        self._cancelado = False  # descarta a transcrição ou resposta que ainda vai chegar
         self._timer_lote = QTimer(self)
         self._timer_lote.setInterval(INTERVALO_LOTE_MS)
         self._timer_lote.timeout.connect(self._conferir_lote)
@@ -132,6 +149,7 @@ class ChatPanel(QFrame):
         self.escuta.gravando.connect(self._gravando)
         self.escuta.gravou.connect(self._transcrever)
         self.escuta.aviso.connect(lambda m: self._rodape(m, erro=True))
+        self.escuta.cancelou.connect(self.cancelar)
 
         # controles que a janela leva para o topo e para o menu ⚙
         self.combo = QComboBox()
@@ -367,9 +385,29 @@ class ChatPanel(QFrame):
         self.cartao.mostrar(descricao)
         self._rodape("Aguardando sua confirmação.")
 
+    def cancelar(self) -> None:
+        """“Cancelar” por voz: cala a fala, recusa o cartão ou descarta o que ainda está a caminho."""
+        self._parar_fala()
+        if self.escuta.esta_gravando:
+            self.escuta.parar(False)
+        if self.cartao.isVisible():
+            self.cartao.btn_cancelar.click()
+            return
+        if any(t is not None and t.isRunning() for t in (self._worker, self._transcricao)):
+            self._cancelado = True
+            self.orbe.definir("ocioso")
+        self._rodape("Cancelado.")
+
     def _recebeu(self, r: Resposta) -> None:
         self._ocupado(False)
         self.orbe.definir("ocioso")
+        if self._cancelado:
+            if r.pendente:  # recusa a alteração pedida, para o histórico da IA não ficar pendurado
+                self._iniciar(lambda cb: self.llm.resolver_confirmacao(False, callback_status=cb))
+                return
+            self._cancelado = False
+            self._rodape("Cancelado.")
+            return
         if r.pendente:
             self._pedir_confirmacao(r.pendente["descricao"])
             return
@@ -454,16 +492,22 @@ class ChatPanel(QFrame):
     # --- voz: saída (fala) e entrada (microfone) ---------------------------
 
     def _falar(self, texto: str) -> None:
-        self._player.stop()
+        self._parar_fala()
         self._fala = FalaWorker(texto, self)
         self._fala.pronto.connect(self._tocar)
         self._fala.start()
 
     def _tocar(self, caminho: str) -> None:
+        if isinstance(self.sender(), FalaWorker) and self.sender() is not self._fala:  # trecho de fala já interrompida
+            if caminho and os.path.exists(caminho):
+                os.remove(caminho)
+            return
         if not caminho:
             self._rodape("Não consegui gerar a voz (sem internet para o Edge-TTS?). A resposta está no texto.", erro=True)
             return
-        self._apagar_mp3()
+        if self._mp3_atual:
+            self._fila_fala.append(caminho)
+            return
         self._mp3_atual = caminho
         self.escuta.pausar("fala", True)
         self.orbe.definir("falando")
@@ -474,6 +518,20 @@ class ChatPanel(QFrame):
     def _fim_fala(self, estado) -> None:
         if estado in (QMediaPlayer.MediaStatus.EndOfMedia, QMediaPlayer.MediaStatus.InvalidMedia):
             self._apagar_mp3()
+            if self._fila_fala:
+                self._tocar(self._fila_fala.pop(0))
+
+    def _parar_fala(self) -> None:
+        if self._fala is not None:
+            self._fala.requestInterruption()
+        fila, self._fila_fala = self._fila_fala, []
+        for c in fila:
+            try:
+                os.remove(c)
+            except OSError:
+                pass
+        self._player.stop()
+        self._apagar_mp3()
 
     def _apagar_mp3(self) -> None:
         if self._mp3_atual:
@@ -491,8 +549,7 @@ class ChatPanel(QFrame):
         if self.escuta.esta_gravando:
             self.escuta.parar(True)
         elif not self._ocupado_agora() and not (self._transcricao is not None and self._transcricao.isRunning()):
-            self._player.stop()
-            self._apagar_mp3()
+            self._parar_fala()
             self.escuta.gravar()
 
     def _gravando(self, sim: bool) -> None:
@@ -515,6 +572,12 @@ class ChatPanel(QFrame):
         self.btn_mic.setEnabled(True)
         self.escuta.pausar("ia", False)
         self.orbe.definir("ocioso")
+        if self._cancelado:
+            self._cancelado = False
+            return
+        if e_cancelar(texto):
+            self._rodape("Cancelado. Nada foi enviado.")
+            return
         if not texto:
             self._rodape("Não consegui entender o áudio. Tente de novo ou digite.", erro=True)
             return
@@ -527,7 +590,7 @@ class ChatPanel(QFrame):
             if t is not None and t.isRunning():
                 t.wait(ms)
         self.escuta.encerrar()
-        self._apagar_mp3()
+        self._parar_fala()
         w = self._worker
         if w is not None and w.isRunning() and not w.wait(ms):
             w.terminate()

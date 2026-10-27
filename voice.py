@@ -39,6 +39,18 @@ def limpar_markdown_para_fala(texto: str) -> str:
     return limpo.strip()
 
 
+def trechos(texto: str, limite: int = 300) -> list:
+    """Divide a fala em trechos: o 1º é só a primeira frase, para a voz começar logo."""
+    frases = [f for f in re.split(r"(?<=[.!?;:])\s+|\n+", limpar_markdown_para_fala(texto)) if f.strip()]
+    saida: list = []
+    for f in frases:
+        if len(saida) > 1 and len(saida[-1]) + len(f) < limite:
+            saida[-1] += " " + f
+        else:
+            saida.append(f)
+    return saida
+
+
 async def _gerar_audio_edge(texto: str, arquivo_destino: str, voz: str):
     """Gera o arquivo mp3 usando edge-tts assincronamente."""
     comunicador = edge_tts.Communicate(texto, voz)

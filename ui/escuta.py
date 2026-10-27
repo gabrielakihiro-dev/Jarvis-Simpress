@@ -24,8 +24,8 @@ BLOCO_MS = 50
 BLOCO_BYTES = TAXA * BLOCO_MS // 1000 * 2
 MODELO_VOZ = Path(__file__).resolve().parent.parent / "modelos_voz" / "vosk-model-small-pt-0.3"
 # "jarvis" não existe no vocabulário do modelo pt; "Jarvis" falado sai como "jarbas" ("árvores" pegava "abertos")
-PALAVRAS = {"jarbas"}
-GRAMATICA = ["jarbas", "[unk]"]
+PALAVRAS = {"jarbas", "cancelar"}
+GRAMATICA = ["jarbas", "cancelar", "[unk]"]
 MICROFONE_MUDO = 0.001  # pico máximo de uma gravação inteira abaixo disso: microfone mudo, não pessoa calada
 
 
@@ -137,7 +137,7 @@ class CorteSilencio:
 class VoskWorker(QThread):
     """Reconhece a palavra de chamada fora da thread da tela, com gramática mínima."""
 
-    ouviu = pyqtSignal()
+    ouviu = pyqtSignal(str)       # "jarbas" | "cancelar"
     falhou = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -178,9 +178,10 @@ class VoskWorker(QThread):
                 texto = json.loads(rec.Result()).get("text", "")
             else:
                 texto = json.loads(rec.PartialResult()).get("partial", "")
-            if PALAVRAS & set(texto.split()):
+            achou = PALAVRAS & set(texto.split())
+            if achou:
                 rec.Reset()
-                self.ouviu.emit()
+                self.ouviu.emit("cancelar" if "cancelar" in achou else "jarbas")
 
 
 class Escuta(QObject):
@@ -188,6 +189,7 @@ class Escuta(QObject):
     gravando = pyqtSignal(bool)
     gravou = pyqtSignal(bytes)    # WAV 16 kHz mono
     aviso = pyqtSignal(str)
+    cancelou = pyqtSignal()       # disse “cancelar” enquanto o Jarvis pensava, falava ou pedia confirmação
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -218,7 +220,7 @@ class Escuta(QObject):
         self._detector = DetectorPalmas()
         if self._vosk is None:
             self._vosk = VoskWorker(self)
-            self._vosk.ouviu.connect(lambda: self._acordar("nome"))
+            self._vosk.ouviu.connect(self._ouviu)
             self._vosk.falhou.connect(lambda m: self.aviso.emit(f"Chamar pelo nome desligado: {m}. Palmas e clique no orbe continuam."))
             self._vosk.start()
         if not self._abrir():
@@ -273,6 +275,12 @@ class Escuta(QObject):
         self._detector.limpar()
         if self._vosk is not None:
             self._vosk.zerar()
+
+    def _ouviu(self, palavra: str) -> None:
+        if palavra != "cancelar":
+            self._acordar("nome")
+        elif self.ligada and self._pausas and not self._gravando:
+            self.cancelou.emit()
 
     def _acordar(self, motivo: str) -> None:
         if not self.ligada or self._gravando or self._pausas or self._ignorar:
@@ -335,7 +343,11 @@ class Escuta(QObject):
                 self.aviso.emit("O microfone entregou só silêncio (mudo ou volume zero no Windows)." if mudo
                                 else "Não ouvi nada. Chame de novo e fale logo depois do bipe.")
             return
-        if not self.ligada or self._pausas:
+        if not self.ligada:
+            return
+        if self._pausas:  # pausada, só “cancelar” vale: palmas e nome ficam de fora
+            if self._vosk is not None:
+                self._vosk.alimentar(bloco)
             return
         if self._ignorar:
             self._ignorar -= 1
