@@ -5,8 +5,10 @@ máscara de dados pessoais (LGPD) e a parada para confirmação do usuário ante
 de qualquer ferramenta que altere dados.
 """
 
+import base64
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -33,6 +35,8 @@ MODELOS_CATALOGO = {
 }
 
 MAX_RODADAS = 5
+# Resposta que só anuncia a consulta ("Vou consultar...") sem ter chamado ferramenta.
+PROMESSA = re.compile(r"^\s*(vou|vamos|irei|deixe-me|um momento|aguarde)\b", re.IGNORECASE)
 TIMEOUT_API = 60.0
 
 # System Prompt que estabelece a personalidade, idioma e regras de proteção do Jarvis
@@ -51,7 +55,8 @@ Suas responsabilidades:
 3. Se o usuário pedir para cancelar uma automação em andamento, chame `cancelar_automacao_chrome`.
 4. Para alterar apelido, usuário ou pendências, chame a ferramenta correspondente. O sistema mostra um cartão de confirmação ao usuário: não peça confirmação por texto e não diga que a alteração foi feita antes do resultado da ferramenta.
 5. Faça uma alteração por vez. Para abrir uma tela do Simpress, diga o nome da tela; a interface oferece o botão.
-6. Apresente os dados de forma limpa, objetiva e fácil de ler (ou ouvir em áudio).
+6. Para qualquer dado, chame a ferramenta na mesma resposta. Nunca responda só "vou consultar".
+7. Apresente os dados de forma limpa, objetiva e fácil de ler (ou ouvir em áudio).
 
 POLÍTICA DE SEGURANÇA E AUTENTICAÇÃO:
 - As credenciais e logins são SEMPRE manuais pelo usuário. Você NUNCA pede senhas, tokens ou dados pessoais sensíveis.
@@ -111,6 +116,23 @@ class LLMClient:
         """Troca o modelo ativo em tempo de execução."""
         self.modelo_principal = novo_modelo.strip()
         return self.modelo_principal
+
+    def transcrever_audio(self, wav: bytes) -> str:
+        """Transcreve a fala do usuário (WAV) com um modelo de áudio do OpenRouter. Devolve "" se falhar."""
+        if not self.client:
+            return ""
+        try:
+            r = self.client.chat.completions.create(
+                model=os.environ.get("MODELO_VOZ", "google/gemini-2.5-flash"),
+                messages=[{"role": "user", "content": [
+                    {"type": "text", "text": "Transcreva fielmente este áudio em português do Brasil. Responda só com a transcrição."},
+                    {"type": "input_audio", "input_audio": {"data": base64.b64encode(wav).decode(), "format": "wav"}},
+                ]}],
+                temperature=0,
+            )
+            return (r.choices[0].message.content or "").strip()
+        except Exception:
+            return ""
 
     def limpar_historico(self) -> None:
         """Reinicia a memória da conversa e o mapa de marcadores."""
@@ -175,7 +197,13 @@ class LLMClient:
 
             msg = resposta.choices[0].message
             if not msg.tool_calls:
-                return self._final(msg.content or "", ferramentas)
+                texto = msg.content or ""
+                if not ferramentas and len(texto) < 200 and PROMESSA.match(texto):
+                    # O modelo prometeu consultar e parou: pede a chamada em vez de mostrar a promessa.
+                    self.mensagens.append({"role": "assistant", "content": texto})
+                    self.mensagens.append({"role": "user", "content": "Chame agora a ferramenta de consulta e responda com os dados."})
+                    continue
+                return self._final(texto, ferramentas)
 
             chamadas = []
             for tc in msg.tool_calls:

@@ -1,10 +1,13 @@
 """Painel de chat com a IA: mensagens, ações rápidas e cartão de confirmação."""
 
 import html
+import io
 import os
+import wave
 from typing import Callable, Optional
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QBuffer, QIODevice, Qt, QThread, QUrl, pyqtSignal
+from PyQt6.QtMultimedia import QAudioFormat, QAudioOutput, QAudioSource, QMediaDevices, QMediaPlayer
 from PyQt6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -51,6 +54,32 @@ class AgentWorker(QThread):
             self.pronto.emit(Resposta(texto=f"Erro inesperado: {e}"))
 
 
+class FalaWorker(QThread):
+    """Gera o mp3 da fala fora da tela; o painel toca com QMediaPlayer."""
+
+    pronto = pyqtSignal(str)
+
+    def __init__(self, texto: str, parent=None):
+        super().__init__(parent)
+        self._texto = texto
+
+    def run(self) -> None:
+        self.pronto.emit(voice.gerar_mp3(self._texto) or "")
+
+
+class TranscreveWorker(QThread):
+    """Envia o áudio gravado ao modelo de transcrição sem travar a tela."""
+
+    pronto = pyqtSignal(str)
+
+    def __init__(self, llm: LLMClient, wav: bytes, parent=None):
+        super().__init__(parent)
+        self._llm, self._wav = llm, wav
+
+    def run(self) -> None:
+        self.pronto.emit(self._llm.transcrever_audio(self._wav))
+
+
 class ChatPanel(QFrame):
     ir_para = pyqtSignal(str)       # pedido de abrir uma tela
     mudou_estado = pyqtSignal()     # modelo ou voz mudaram
@@ -60,6 +89,16 @@ class ChatPanel(QFrame):
         self.setObjectName("chat")
         self.llm = llm
         self._worker: Optional[AgentWorker] = None
+        self._fala: Optional[FalaWorker] = None
+        self._transcricao: Optional[TranscreveWorker] = None
+        self._mic: Optional[QAudioSource] = None
+        self._mic_buf: Optional[QBuffer] = None
+        self._mic_fmt = None
+        self._player = QMediaPlayer(self)
+        self._saida = QAudioOutput(self)
+        self._player.setAudioOutput(self._saida)
+        self._player.mediaStatusChanged.connect(self._fim_fala)
+        self._mp3_atual = ""
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(*(theme.SP["md"],) * 4)
@@ -113,9 +152,13 @@ class ChatPanel(QFrame):
         self.campo.setPlaceholderText("Pergunte sobre equipamentos, chamados, automação…")
         self.campo.setAccessibleName("Mensagem para o assistente")
         self.campo.returnPressed.connect(self._enviar_campo)
+        self.btn_mic = botao("🎤", "fantasma", "Falar com o Jarvis: clique para gravar e clique de novo para enviar", "Falar com o Jarvis")
+        self.btn_mic.setCheckable(True)
+        self.btn_mic.clicked.connect(self._alternar_mic)
         self.btn_enviar = botao("Enviar", "primario")
         self.btn_enviar.clicked.connect(self._enviar_campo)
         entrada.addWidget(self.campo, 1)
+        entrada.addWidget(self.btn_mic)
         entrada.addWidget(self.btn_enviar)
         lay.addLayout(entrada)
 
@@ -145,7 +188,7 @@ class ChatPanel(QFrame):
         self.rodape.setText(f"<span style='color:{cor}'>{html.escape(msg)}</span>")
 
     def _ocupado(self, ocupado: bool) -> None:
-        for w in (self.campo, self.btn_enviar, self.combo, self.btn_limpar, *self._chips):
+        for w in (self.campo, self.btn_enviar, self.btn_mic, self.combo, self.btn_limpar, *self._chips):
             w.setEnabled(not ocupado)
         self.btn_enviar.setText("Pensando…" if ocupado else "Enviar")
 
@@ -215,11 +258,107 @@ class ChatPanel(QFrame):
         erro = r.texto.startswith(("Erro", "A chave"))
         self._rodape(f"Ferramentas usadas: {usadas}" if usadas else ("Falhou — veja a mensagem acima." if erro else "Pronto."), erro=erro)
         if r.texto_voz and voice.HABILITAR_VOZ:
-            voice.falar(r.texto_voz)
+            self._falar(r.texto_voz)
         self.campo.setFocus()
+
+    # --- voz: saída (fala) e entrada (microfone) ---------------------------
+
+    def _falar(self, texto: str) -> None:
+        self._player.stop()
+        self._fala = FalaWorker(texto, self)
+        self._fala.pronto.connect(self._tocar)
+        self._fala.start()
+
+    def _tocar(self, caminho: str) -> None:
+        if not caminho:
+            self._rodape("Não consegui gerar a voz (sem internet para o Edge-TTS?). A resposta está no texto.", erro=True)
+            return
+        self._apagar_mp3()
+        self._mp3_atual = caminho
+        self._player.setSource(QUrl.fromLocalFile(caminho))
+        self._saida.setVolume(1.0)
+        self._player.play()
+
+    def _fim_fala(self, estado) -> None:
+        if estado in (QMediaPlayer.MediaStatus.EndOfMedia, QMediaPlayer.MediaStatus.InvalidMedia):
+            self._apagar_mp3()
+
+    def _apagar_mp3(self) -> None:
+        if self._mp3_atual:
+            self._player.setSource(QUrl())
+            try:
+                os.remove(self._mp3_atual)
+            except OSError:
+                pass
+            self._mp3_atual = ""
+
+    def _alternar_mic(self) -> None:
+        if self._mic is not None:
+            self._parar_mic()
+            return
+        entrada = QMediaDevices.defaultAudioInput()
+        if entrada.isNull():
+            self.btn_mic.setChecked(False)
+            self._rodape("Nenhum microfone encontrado. Conecte um e tente de novo.", erro=True)
+            return
+        fmt = QAudioFormat()
+        fmt.setSampleRate(16000)
+        fmt.setChannelCount(1)
+        fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
+        if not entrada.isFormatSupported(fmt):
+            fmt = entrada.preferredFormat()
+        if fmt.sampleFormat() != QAudioFormat.SampleFormat.Int16:
+            self.btn_mic.setChecked(False)
+            self._rodape("O microfone usa um formato de áudio que o Jarvis ainda não lê.", erro=True)
+            return
+        self._player.stop()
+        self._mic_fmt = fmt
+        self._mic_buf = QBuffer(self)
+        self._mic_buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        self._mic = QAudioSource(entrada, fmt, self)
+        self._mic.start(self._mic_buf)
+        self.btn_mic.setText("⏹ Enviar")
+        self._rodape("Ouvindo… fale e clique em Enviar.")
+
+    def _parar_mic(self) -> None:
+        mic, buf = self._mic, self._mic_buf
+        self._mic = self._mic_buf = None
+        mic.stop()
+        dados = bytes(buf.data())
+        buf.close()
+        self.btn_mic.setChecked(False)
+        self.btn_mic.setText("🎤")
+        if len(dados) < 8000:  # menos de ~0,25 s: clique sem fala
+            self._rodape("Não ouvi nada. Clique no microfone e fale.", erro=True)
+            return
+        f = self._mic_fmt
+        bio = io.BytesIO()
+        with wave.open(bio, "wb") as w:
+            w.setnchannels(f.channelCount())
+            w.setsampwidth(2)
+            w.setframerate(f.sampleRate())
+            w.writeframes(dados)
+        self._rodape("Transcrevendo…")
+        self.btn_mic.setEnabled(False)
+        self._transcricao = TranscreveWorker(self.llm, bio.getvalue(), self)
+        self._transcricao.pronto.connect(self._transcreveu)
+        self._transcricao.start()
+
+    def _transcreveu(self, texto: str) -> None:
+        self.btn_mic.setEnabled(True)
+        if not texto:
+            self._rodape("Não consegui entender o áudio. Tente de novo ou digite.", erro=True)
+            return
+        self.enviar(texto)
 
     def aguardar_fim(self, ms: int = 2000) -> None:
         """Chamado no fechamento da janela: espera a chamada em andamento terminar."""
+        for t in (self._fala, self._transcricao):
+            if t is not None and t.isRunning():
+                t.wait(ms)
+        if self._mic is not None:
+            self._mic.stop()
+        self._apagar_mp3()
         w = self._worker
         if w is not None and w.isRunning() and not w.wait(ms):
             w.terminate()

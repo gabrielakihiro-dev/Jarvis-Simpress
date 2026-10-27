@@ -54,7 +54,7 @@ def _executar_reproducao(arquivo_mp3: str):
         f"$w.settings.volume = 100; "
         f"$w.URL = '{caminho}'; "
         f"$w.controls.play(); "
-        f"$t = 0; while (($w.playState -eq 9 -or $w.playState -eq 0) -and $t -lt 30) {{ Start-Sleep -Milliseconds 50; $t++ }}; "
+        f"$t = 0; while (($w.playState -eq 9 -or $w.playState -eq 0) -and $t -lt 200) {{ Start-Sleep -Milliseconds 50; $t++ }}; "
         f"while ($w.playState -eq 3 -or $w.playState -eq 6) {{ Start-Sleep -Milliseconds 50 }}; "
         f"$w.controls.stop(); $w.close()"
     )
@@ -94,6 +94,21 @@ def _thread_falar(texto_fala: str, voz: str):
                 os.remove(temp_path)
             except Exception:
                 pass
+
+
+def gerar_mp3(texto: str, voz: Optional[str] = None) -> Optional[str]:
+    """Gera o mp3 da fala e devolve o caminho (quem chama toca e apaga). None se não der."""
+    fala = limpar_markdown_para_fala(texto)
+    if not TTS_DISPONIVEL or not fala:
+        return None
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tf:
+        caminho = tf.name
+    try:
+        asyncio.run(_gerar_audio_edge(fala, caminho, voz or os.environ.get("VOZ_NOME", VOZ_PADRAO)))
+        return caminho
+    except Exception:
+        os.path.exists(caminho) and os.remove(caminho)
+        return None
 
 
 def falar(texto: str, voz: Optional[str] = None) -> bool:
