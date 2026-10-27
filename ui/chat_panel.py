@@ -151,6 +151,7 @@ class ChatPanel(QFrame):
         self.escuta.gravou.connect(self._transcrever)
         self.escuta.aviso.connect(lambda m: self._rodape(m, erro=True))
         self.escuta.cancelou.connect(self.cancelar)
+        self.escuta.dormiu.connect(lambda: self._rodape("Dormindo — bata duas palmas ou chame o Jarvis."))
 
         # controles que a janela leva para o topo e para o menu ⚙
         self.combo = QComboBox()
@@ -392,6 +393,7 @@ class ChatPanel(QFrame):
         self._parar_fala()
         if self.escuta.esta_gravando:
             self.escuta.parar(False)
+        self.escuta.dormir()
         if self.cartao.isVisible():
             self.cartao.btn_cancelar.click()
             return
@@ -595,6 +597,7 @@ class ChatPanel(QFrame):
             self._cancelado = False
             return
         if e_cancelar(texto):
+            self.escuta.dormir()
             self._rodape("Cancelado. Nada foi enviado.")
             return
         if not texto:

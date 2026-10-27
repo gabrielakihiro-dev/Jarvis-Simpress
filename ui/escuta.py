@@ -16,7 +16,7 @@ from array import array
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 from PyQt6.QtMultimedia import QAudioFormat, QAudioSource, QMediaDevices
 from PyQt6.QtWidgets import QApplication
 
@@ -168,6 +168,29 @@ class CorteSilencio:
         return None
 
 
+class Conversa:
+    """Conversa contínua: depois de chamar o Jarvis ele segue ouvindo até ficar `espera_ms` sem você falar."""
+
+    ESPERA_MS = 120_000
+
+    def __init__(self, espera_ms: int = ESPERA_MS, relogio=time.monotonic):
+        self.espera_ms, self._relogio = espera_ms, relogio
+        self.acordada, self._marca = False, 0.0
+
+    def acordar(self) -> None:
+        self.acordada = True
+        self.reiniciar()
+
+    def reiniciar(self) -> None:
+        self._marca = self._relogio()
+
+    def dormir(self) -> None:
+        self.acordada = False
+
+    def venceu(self) -> bool:
+        return self.acordada and (self._relogio() - self._marca) * 1000 >= self.espera_ms
+
+
 # --- Qt --------------------------------------------------------------------
 
 class VoskWorker(QThread):
@@ -226,9 +249,15 @@ class Escuta(QObject):
     gravou = pyqtSignal(bytes)    # WAV 16 kHz mono
     aviso = pyqtSignal(str)
     cancelou = pyqtSignal()       # disse “cancelar” enquanto o Jarvis pensava, falava ou pedia confirmação
+    dormiu = pyqtSignal()         # 2 min sem você falar: volta a esperar por palmas ou pelo nome
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.conversa = Conversa()
+        self._silenciosa = False  # gravação reaberta sozinha pela conversa contínua: sem bipe nem aviso
+        self._sono = QTimer(self)
+        self._sono.setInterval(5000)
+        self._sono.timeout.connect(self._conferir_sono)
         self.ligada = False
         self._fonte: Optional[QAudioSource] = None
         self._dev = None
@@ -251,10 +280,13 @@ class Escuta(QObject):
     def ligar(self, ligar: bool) -> bool:
         self.ligada = ligar
         if not ligar:
+            self._sono.stop()
+            self.conversa.dormir()
             if not self._gravando:
                 self._fechar()
             return True
         self._detector = DetectorPalmas()
+        self._sono.start()
         if self._vosk is None:
             self._vosk = VoskWorker(self)
             self._vosk.ouviu.connect(self._ouviu)
@@ -270,17 +302,27 @@ class Escuta(QObject):
         (self._pausas.add if ativo else self._pausas.discard)(motivo)
         if antes and not self._pausas:
             self._esfriar()
+            self.conversa.reiniciar()  # o Jarvis acabou de falar: a vez é sua
+            self._retomar_depois()
 
-    def gravar(self) -> bool:
+    def gravar(self, silenciosa: bool = False) -> bool:
         if self._gravando:
             return True
         if not self._abrir():
             return False
+        self._silenciosa = silenciosa
+        if self.ligada and not silenciosa:
+            self.conversa.acordar()
         self._gravando, self._buf = True, bytearray()
         self._corte = CorteSilencio(self._detector.ruido)
-        QApplication.beep()
+        if not silenciosa:
+            QApplication.beep()
         self.gravando.emit(True)
         return True
+
+    def dormir(self) -> None:
+        """Encerra a conversa contínua (sem aviso): “cancelar” ou parar uma gravação sem fala."""
+        self.conversa.dormir()
 
     def parar(self, enviar: bool = True) -> None:
         if not self._gravando:
@@ -293,12 +335,16 @@ class Escuta(QObject):
             self._fechar()
         if not enviar:
             return
-        if len(dados) < 8000:  # menos de 0,25 s: clique sem fala
-            self.aviso.emit("Não ouvi nada. Fale logo depois do bipe.")
+        if len(dados) < 8000:  # menos de 0,25 s: clique sem fala, quer sair da conversa
+            if not self._silenciosa:
+                self.aviso.emit("Não ouvi nada. Fale logo depois do bipe.")
+            self.dormir()
             return
+        self.conversa.reiniciar()
         self.gravou.emit(wav(dados))
 
     def encerrar(self) -> None:
+        self._sono.stop()
         if self._vosk is not None:
             self._vosk.requestInterruption()
             self._vosk.wait(2000)
@@ -312,6 +358,20 @@ class Escuta(QObject):
         self._detector.limpar()
         if self._vosk is not None:
             self._vosk.zerar()
+
+    def _retomar_depois(self) -> None:
+        QTimer.singleShot(500, self._retomar)  # espera o esfriamento do bipe e da fala
+
+    def _retomar(self) -> None:
+        if self.ligada and self.conversa.acordada and not self._gravando and not self._pausas:
+            self.gravar(silenciosa=True)
+
+    def _conferir_sono(self) -> None:
+        if self.conversa.venceu() and not self._pausas:
+            if self._gravando:
+                self.parar(False)
+            self.dormir()
+            self.dormiu.emit()
 
     def _ouviu(self, palavra: str) -> None:
         if palavra != "cancelar":
@@ -379,13 +439,18 @@ class Escuta(QObject):
         if self._gravando:
             self._buf += bloco
             fim = self._corte.alimentar(p)
+            if self._corte.voz:
+                self.conversa.reiniciar()  # falando agora: não dorme no meio da frase
             if fim == "fim":
                 self.parar(True)
             elif fim == "vazio":
                 mudo = pico(bytes(self._buf)) < MICROFONE_MUDO
+                silenciosa = self._silenciosa
                 self.parar(False)
-                self.aviso.emit("O microfone entregou só silêncio (mudo ou volume zero no Windows)." if mudo
-                                else "Não ouvi nada. Chame de novo e fale logo depois do bipe.")
+                if not silenciosa:
+                    self.aviso.emit("O microfone entregou só silêncio (mudo ou volume zero no Windows)." if mudo
+                                    else "Não ouvi nada. Chame de novo e fale logo depois do bipe.")
+                self._retomar_depois()  # conversa contínua: segue ouvindo até dormir
             return
         if not self.ligada:
             return

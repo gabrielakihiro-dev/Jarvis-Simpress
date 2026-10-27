@@ -1,6 +1,6 @@
 from array import array
 
-from ui.escuta import CorteSilencio, DetectorPalmas, para_mono_16k, pico
+from ui.escuta import Conversa, CorteSilencio, DetectorPalmas, para_mono_16k, pico
 
 QUIETO, ALTO = 0.01, 0.8
 
@@ -115,3 +115,37 @@ def test_dispara_em_menos_de_meio_segundo_depois_da_segunda_palma():
         d.alimentar(p)
     espera = next(i for i in range(1, 20) if d.alimentar(QUIETO)) * 50
     assert espera <= 450
+
+
+# --- conversa contínua: dorme depois de 2 min sem você falar ---
+class Relogio:
+    def __init__(self):
+        self.s = 0.0
+
+    def __call__(self):
+        return self.s
+
+
+def test_conversa_dorme_depois_de_2_minutos():
+    r = Relogio()
+    c = Conversa(relogio=r)
+    assert not c.venceu()  # nunca acordada
+    c.acordar()
+    r.s = 119.9
+    assert not c.venceu()
+    r.s = 120
+    assert c.venceu()
+
+
+def test_conversa_reiniciar_adia_o_sono_e_dormir_encerra():
+    r = Relogio()
+    c = Conversa(relogio=r)
+    c.acordar()
+    r.s = 100
+    c.reiniciar()
+    r.s = 219
+    assert not c.venceu()
+    r.s = 220
+    assert c.venceu()
+    c.dormir()
+    assert not c.venceu() and not c.acordada
