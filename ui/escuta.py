@@ -309,7 +309,7 @@ class Escuta(QObject):
 
     def _wake_falhou(self, motivo: str) -> None:
         self._wake_ok = False
-        self.aviso.emit(f"{motivo}. Chamar por “Jarvis” (modelo de voz), palmas e clique no orbe continuam.")
+        self.aviso.emit(f"{motivo}. Chamar por “Jarvis” (modelo de voz) e clicar no orbe continuam.")
 
     def pausar(self, motivo: str, ativo: bool) -> None:
         """Fala do Jarvis, espera da IA e cartão de confirmação pausam a escuta."""

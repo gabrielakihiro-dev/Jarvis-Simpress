@@ -23,7 +23,7 @@ Animações de 150–300 ms; desligue com `JARVIS_REDUZIR_MOVIMENTO=1`.
 
 Clique no orbe (ou 🎤), bata **duas palmas** ou diga **“Hey Jarvis”**. Toca um bipe; fale e ele para sozinho depois de 2 s de silêncio (máximo 20 s).
 
-Palmas e “Hey Jarvis” exigem a **Escuta ativa** (⚙ › Escuta ativa; fica salva como `JARVIS_ESCUTA=1` no `.env`). “Hey Jarvis” é reconhecido pelo **openwakeword** (modelo `hey_jarvis`, offline); “cancelar” continua no Vosk com o modelo `modelos_voz/vosk-model-small-pt-0.3` (baixar de https://alphacephei.com/vosk/models e descompactar ali; a pasta fica fora do Git). Se o openwakeword ou o modelo faltar, aparece um aviso e o Vosk volta a reconhecer “Jarvis” (dito como “jarbas”) como plano B; sem o modelo do Vosk, palmas e clique continuam funcionando.
+Palmas e “Hey Jarvis” exigem a **Escuta ativa** (⚙ › Escuta ativa; fica salva como `JARVIS_ESCUTA=1` no `.env`). “Hey Jarvis” é reconhecido pelo **openwakeword** (modelo `hey_jarvis`, offline); “cancelar” continua no Vosk com o modelo `modelos_voz/vosk-model-small-pt-0.3` (baixar de https://alphacephei.com/vosk/models e descompactar ali; a pasta fica fora do Git). Se o openwakeword ou o modelo faltar, aparece um aviso e o Vosk volta a reconhecer “Jarvis” (dito como “jarbas”) como plano B; sem o modelo do Vosk, o clique no orbe continua funcionando.
 
 **Modelo do “Hey Jarvis” (passo único, precisa de internet):** o programa nunca baixa nada sozinho. Depois de instalar as dependências, rode uma vez:
 

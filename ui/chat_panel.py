@@ -151,7 +151,7 @@ class ChatPanel(QFrame):
         self.escuta.gravou.connect(self._transcrever)
         self.escuta.aviso.connect(lambda m: self._rodape(m, erro=True))
         self.escuta.cancelou.connect(self.cancelar)
-        self.escuta.dormiu.connect(lambda: self._rodape("Dormindo — bata duas palmas ou diga Hey Jarvis."))
+        self.escuta.dormiu.connect(lambda: self._rodape("Dormindo — diga Hey Jarvis ou clique no orbe."))
 
         # controles que a janela leva para o topo e para o menu ⚙
         self.combo = QComboBox()
