@@ -42,4 +42,4 @@ Usuário logado, apelido, nomes, e-mails e telefones viram tokens `[PESSOA_n]` a
 .venv\Scripts\python -m pytest -q
 ```
 
-Cobrem cliente HTTP, laço de ferramentas/confirmação, LGPD e contraste WCAG AA dos tokens. A janela em si foi verificada manualmente contra um servidor falso, não pela suíte.
+Cobrem cliente HTTP, laço de ferramentas/confirmação, LGPD e contraste WCAG AA dos tokens. A janela foi verificada à mão contra o Simpress real (:8000) e contra um servidor falso, não pela suíte.

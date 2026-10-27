@@ -46,6 +46,7 @@ class StatusWorker(QThread):
     def __init__(self, simpress: SimpressClient, parent=None):
         super().__init__(parent)
         self.simpress = simpress
+        self._acordar = False
 
     def run(self) -> None:
         while not self.isInterruptionRequested():
@@ -53,7 +54,13 @@ class StatusWorker(QThread):
             for _ in range(INTERVALO_STATUS_S * 4):
                 if self.isInterruptionRequested():
                     return
+                if self._acordar:  # "Procurar de novo": consulta já, sem esperar o intervalo
+                    self._acordar = False
+                    break
                 self.msleep(250)
+
+    def acordar(self) -> None:
+        self._acordar = True
 
     def coletar(self) -> dict:
         estado = {"online": False, "url": self.simpress.base_url}
@@ -187,8 +194,7 @@ class JarvisShell(QMainWindow):
 
     def _reprocurar(self) -> None:
         self.ind_servidor.definir("neutro", "procurando…")
-        if self.simpress.descobrir():
-            self._aplicar_status(self._status.coletar())
+        self._status.acordar()  # a busca de porta roda na thread de status, não trava a tela
 
     def _aplicar_status(self, e: dict) -> None:
         if not e.get("online"):
