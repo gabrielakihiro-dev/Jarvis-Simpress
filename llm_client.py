@@ -16,7 +16,7 @@ import httpx
 from openai import OpenAI
 
 from lgpd import TOKEN_PATTERN, Mascara
-from simpress_client import SimpressClient
+from simpress_client import MAX_CARACTERES_RESPOSTA, SimpressClient
 from voice import resumo_para_fala
 from tools.simpress_tools import (
     NOMES_FERRAMENTAS,
@@ -28,12 +28,12 @@ from tools.simpress_tools import (
 
 # Catálogo com os modelos mais recomendados, rápidos e eficientes no OpenRouter
 MODELOS_CATALOGO = {
-    "1": ("deepseek/deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash 1017 (Prioridade máxima: ultra-rápido)"),
-    "2": ("deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash (Versão padrão estável)"),
-    "3": ("google/gemini-2.5-flash", "Gemini 2.5 Flash (Fallback / Velocidade extrema)"),
-    "4": ("openai/gpt-4o-mini", "GPT-4o Mini (Precisão máxima em JSON e estabilidade)"),
-    "5": ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B (Modelo aberto de ponta)"),
-    "6": ("anthropic/claude-haiku-5.5:batch", "Claude Haiku 5.5 Batch (Modelo leve e eficiente da Anthropic)"),
+    "1": ("openai/gpt-4o-mini", "GPT-4o Mini (Precisão máxima em JSON e estabilidade)"),
+    "2": ("google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite (Mais barato e rápido nas ferramentas)"),
+    "3": ("deepseek/deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash 1017 (Prioridade máxima: ultra-rápido)"),
+    "4": ("deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash (Versão padrão estável)"),
+    "5": ("google/gemini-2.5-flash", "Gemini 2.5 Flash (Fallback / Velocidade extrema)"),
+    "6": ("z-ai/glm-5.3-flash", "GLM 5.3 Flash (Favorito: baixo custo e ferramentas)"),
 }
 
 MAX_RODADAS = 5
@@ -51,7 +51,9 @@ def listar_modelos_ao_vivo(timeout: float = 6.0) -> List[Tuple[str, str]]:
         if "tools" not in (m.get("supported_parameters") or []):
             continue
         try:
-            preco = f"US$ {float(m['pricing']['prompt']) * 1_000_000:.2f}/M"
+            p = m["pricing"]
+            preco = (f"entrada US$ {float(p['prompt']) * 1_000_000:.2f}/M · "
+                     f"saída US$ {float(p['completion']) * 1_000_000:.2f}/M")
         except (KeyError, TypeError, ValueError):
             preco = "preço n/d"
         saida.append((m["id"], f"{m['id']} · {preco}"))
@@ -111,6 +113,7 @@ class LLMClient:
         self.simpress = simpress_client
         self.toolbox = SimpressToolbox(self.simpress)
         self.mascara = Mascara()
+        self._nomes_base_carregados = False
         api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
 
         if not api_key or api_key.startswith("sk-or-v1-coloque"):
@@ -194,15 +197,23 @@ class LLMClient:
     def _msg_tool(self, tool_call_id: str, nome: str, resultado: Dict[str, Any]) -> Dict[str, Any]:
         # O que vai ao modelo passa pela máscara; os dados reais ficam só aqui.
         conteudo = json.dumps(self.mascara.mascarar(resultado), ensure_ascii=False)
+        if len(conteudo) > MAX_CARACTERES_RESPOSTA:
+            # Corta só depois da máscara: o trecho já não tem nomes reais.
+            conteudo = json.dumps(
+                {"aviso": "Resposta grande, mostrando só o início.", "trecho": conteudo[:MAX_CARACTERES_RESPOSTA]},
+                ensure_ascii=False,
+            )
         return {"role": "tool", "tool_call_id": tool_call_id, "name": nome, "content": conteudo}
 
     def _final(self, bruto: str, ferramentas: List[str]) -> Resposta:
         """Fecha o turno: guarda o texto mascarado no histórico e restaura para a tela."""
         bruto = bruto or "Não obtive resposta do modelo."
         self.mensagens.append({"role": "assistant", "content": bruto})
+        texto = self.mascara.restaurar(bruto)
         return Resposta(
-            texto=self.mascara.restaurar(bruto),
-            texto_voz=resumo_para_fala(TOKEN_PATTERN.sub("uma pessoa", bruto)),
+            texto=texto,
+            # A voz fala os nomes reais (pedido do usuário); só um marcador inventado pelo modelo vira "uma pessoa".
+            texto_voz=resumo_para_fala(TOKEN_PATTERN.sub("uma pessoa", texto)),
             ferramentas=ferramentas,
         )
 
@@ -299,6 +310,19 @@ class LLMClient:
         self.mensagens.append({"role": "assistant", "content": "Atingi o limite de consultas desta resposta. Pergunte de novo, de forma mais específica."})
         return Resposta(texto=self.mensagens[-1]["content"], ferramentas=ferramentas)
 
+    def _carregar_nomes_base(self) -> None:
+        """Na primeira mensagem, carrega os nomes da base para mascarar o que o usuário digitar.
+
+        Fica na primeira mensagem (e não na abertura) porque nada vai à IA antes dela e
+        porque assim tenta de novo se o Simpress ainda estava desligado.
+        """
+        if self._nomes_base_carregados:
+            return
+        nomes = self.simpress.listar_nomes_usuarios()
+        if nomes is not None:
+            self.mascara.registrar_base(nomes)
+            self._nomes_base_carregados = True
+
     def enviar_mensagem(self, texto_usuario: str, callback_status: Optional[Callable[[str], None]] = None) -> Resposta:
         """Envia a mensagem, roda as ferramentas de consulta e devolve a resposta ou um pedido de confirmação."""
         if not self.client:
@@ -306,6 +330,7 @@ class LLMClient:
         if self._pendente is not None:
             return Resposta(texto="Há uma alteração aguardando sua confirmação. Confirme ou cancele antes de continuar.")
 
+        self._carregar_nomes_base()
         checkpoint = len(self.mensagens)
         self.mensagens.append({"role": "user", "content": self.mascara.ocultar_conhecidos(texto_usuario)})
         self._dados = []

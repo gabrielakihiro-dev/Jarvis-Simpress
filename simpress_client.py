@@ -5,7 +5,6 @@ o usuário confirmou. Aplica a sanitização de dados pessoais (LGPD) antes de
 qualquer dado seguir para a inteligência artificial.
 """
 
-import json
 import os
 import re
 from collections import Counter
@@ -34,6 +33,9 @@ PASTA_DOWNLOADS = Path.home() / "Downloads"
 # Limites para o texto devolvido à IA não estourar o contexto do modelo.
 MAX_ITENS_LISTA = 20
 MAX_CARACTERES_RESPOSTA = 6000
+# Teto de páginas (100 itens cada) ao carregar os nomes da base para a máscara.
+# shortcut: acima de 20.000 equipamentos com usuário a lista fica parcial; aumentar se a base crescer.
+MAX_PAGINAS_NOMES = 200
 
 
 def sanitizar_equipamento(equip: Dict[str, Any]) -> Dict[str, Any]:
@@ -83,11 +85,10 @@ def _aparar(dados: Any) -> Any:
     return dados
 
 
-def _limitar_tamanho(dados: Any) -> Any:
-    texto = json.dumps(dados, ensure_ascii=False)
-    if len(texto) <= MAX_CARACTERES_RESPOSTA:
-        return dados
-    return {"aviso": "Resposta grande, mostrando só o início.", "trecho": texto[:MAX_CARACTERES_RESPOSTA]}
+def e_macbook(equip: Dict[str, Any]) -> bool:
+    """Mesmo critério do Simpress (categorize_equipment): 'MACBOOK' no tipo ou no modelo."""
+    texto = " ".join(str(equip.get(k) or "") for k in ("categoria", "tipo", "modelo")).upper()
+    return "MACBOOK" in texto
 
 
 class SimpressClient:
@@ -183,15 +184,16 @@ class SimpressClient:
         ok, dados = self._chamar("GET", caminho, params=params)
         if not ok:
             return {"erro": dados}
-        return {"dados": _limitar_tamanho(_aparar(dados))}
+        # O corte por tamanho fica no LLMClient, depois da máscara (LGPD).
+        return {"dados": _aparar(dados)}
 
     # --- consultas já existentes ----------------------------------------
 
     def consultar_equipamento(self, serial: str) -> Dict[str, Any]:
         """Consulta um equipamento pelo número de série.
 
-        Aplica a regra de MacBooks do AGENTS.md (tenta o prefixo 'S' se não achar)
-        e, por último, busca por aproximação.
+        Aplica a regra de MacBooks do AGENTS.md (tenta o prefixo 'S' se não achar,
+        e só aceita se o achado for MacBook) e, por último, busca por aproximação.
         """
         clean_serial = serial.strip().upper()
         if not clean_serial:
@@ -205,7 +207,7 @@ class SimpressClient:
 
         if not clean_serial.startswith("S"):
             ok, dados = self._chamar("GET", f"/api/equipamento/S{clean_serial}")
-            if ok and isinstance(dados, dict):
+            if ok and isinstance(dados, dict) and e_macbook(dados):
                 resultado = sanitizar_equipamento(dados)
                 resultado["observacao"] = f"Equipamento localizado na base oficial com o prefixo 'S' (S{clean_serial})."
                 return {"encontrado": True, "equipamento": resultado}
@@ -247,6 +249,25 @@ class SimpressClient:
             "total_encontrados": dados.get("total", 0),
             "itens": [sanitizar_equipamento(item) for item in dados.get("items", [])],
         }
+
+    def listar_nomes_usuarios(self) -> Optional[List[str]]:
+        """Logins e nomes de pessoas da base, para a máscara LGPD reconhecer o que for digitado. None se falhar."""
+        nomes = set()
+        offset = 0
+        for _ in range(MAX_PAGINAS_NOMES):
+            ok, dados = self._chamar("GET", "/api/buscar-expandida", params={
+                "listar_todos": "true", "usuario": "com", "limit": 100, "offset": offset,
+            })
+            if not ok or not isinstance(dados, dict):
+                return None
+            itens = dados.get("items") or []
+            for item in itens:
+                valores = [item.get("usuarios_logados"), item.get("nome_pessoa"), *(item.get("usuarios_logados_candidatos") or [])]
+                nomes.update(v.strip() for v in valores if isinstance(v, str) and v.strip())
+            if not dados.get("has_more") or not itens:
+                break
+            offset += len(itens)
+        return sorted(nomes)
 
     def obter_totais_inventario(self) -> Dict[str, Any]:
         """Totais oficiais do cadastro da Simpress."""

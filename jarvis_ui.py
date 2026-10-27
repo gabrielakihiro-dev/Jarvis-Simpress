@@ -17,7 +17,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setStyleSheet(theme.qss())
     janela = JarvisShell()
-    janela.show()
+    janela.showMaximized()  # ocupa a tela toda, mantendo a barra de título e a do Windows
     return app.exec()
 
 

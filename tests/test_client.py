@@ -15,12 +15,26 @@ def test_macbook_sem_s_acha_com_prefixo_s():
         if req.url.path == "/api/equipamento/CMVXKV7YCM":
             return httpx.Response(404, json={"detail": "nao"})
         if req.url.path == "/api/equipamento/SCMVXKV7YCM":
-            return httpx.Response(200, json={"serial": "SCMVXKV7YCM", "usuarios_logados": "Ana"})
+            return httpx.Response(200, json={"serial": "SCMVXKV7YCM", "modelo": "MacBook Air M2", "usuarios_logados": "Ana"})
         return httpx.Response(404)
 
     res = cliente(handler).consultar_equipamento("cmvxkv7ycm")
     assert res["encontrado"] and res["equipamento"]["serial"] == "SCMVXKV7YCM"
     assert "prefixo 'S'" in res["equipamento"]["observacao"]
+
+
+def test_prefixo_s_nao_vale_para_quem_nao_e_macbook():
+    def handler(req):
+        if req.url.path == "/api/equipamento/SXYZ123":
+            return httpx.Response(200, json={"serial": "SXYZ123", "modelo": "Impressora Laser", "tipo": "Impressora"})
+        if req.url.path == "/api/buscar":
+            return httpx.Response(200, json=[{"serial": "SXYZ123", "modelo": "Impressora Laser"}])
+        return httpx.Response(404, json={"detail": "nao"})
+
+    res = cliente(handler).consultar_equipamento("XYZ123")
+    # A impressora só aparece como correspondência aproximada, nunca como a mesma série.
+    assert "equipamento" not in res and "aproximadas" in res["observacao"]
+    assert "prefixo 'S'" not in str(res)
 
 
 def test_servidor_offline_nao_trava_e_avisa():
@@ -180,3 +194,25 @@ def test_salvar_unidade_envia_payload_com_id():
     res = cliente(handler).salvar_unidade(cidade=" Maringá ", endereco="Av. Brasil, 1", cnpj="12", uf="pr", cep="87000000", id="7")
     assert res["sucesso"]
     assert vistos["corpo"] == {"id": 7, "cidade": "Maringá", "endereco": "Av. Brasil, 1", "cnpj": "12", "uf": "PR", "cep": "87000000"}
+
+
+def test_listar_nomes_percorre_paginas_e_junta_campos():
+    offsets = []
+
+    def handler(req):
+        offset = int(req.url.params["offset"])
+        offsets.append(offset)
+        if offset == 0:
+            return httpx.Response(200, json={"has_more": True, "items": [
+                {"usuarios_logados": "jlima", "nome_pessoa": "Joana Lima", "usuarios_logados_candidatos": ["jlima", "pedro.s"]},
+                {"usuarios_logados": "Sem usuário registrado", "nome_pessoa": None},
+            ]})
+        return httpx.Response(200, json={"has_more": False, "items": [{"usuarios_logados": " Ana Paula "}]})
+
+    assert cliente(handler).listar_nomes_usuarios() == sorted(
+        ["jlima", "Joana Lima", "pedro.s", "Sem usuário registrado", "Ana Paula"])
+    assert offsets == [0, 2]
+
+
+def test_listar_nomes_devolve_none_se_falhar():
+    assert cliente(lambda req: httpx.Response(500, json={"detail": "x"})).listar_nomes_usuarios() is None

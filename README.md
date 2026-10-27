@@ -13,10 +13,10 @@ Destaques: chamada por voz “Hey Jarvis” (offline), conversa contínua que do
 ## A janela
 
 - **Topo:** Simpress online/offline e porta, `💤 em espera` (escuta ativa ligada: microfone só procura “Hey Jarvis”), modelo de IA, voz 🔊/🔇 e o menu ⚙ (modelo, Abrir Simpress no navegador, Importar planilhas…, Nova conversa, Escuta ativa).
-- **Esquerda:** cartões Equipamentos, Chamados abertos, Automação e Pendências. Atualizam a cada 10 s; clicar pergunta ao Jarvis.
-- **Centro:** orbe (ocioso, pensando, falando, ouvindo — sempre com texto, não só cor) e a conversa em balões. Listas viram tabelas de até 10 linhas; depois de cada resposta aparecem até 3 sugestões de próxima pergunta.
+- **Esquerda (trilho):** orbe grande (ocioso, pensando, falando, ouvindo — sempre com texto, não só cor; “Clique para cancelar” enquanto ativo) e, embaixo, os cartões Equipamentos, Chamados abertos, Automação e Pendências. Atualizam a cada 10 s; clicar pergunta ao Jarvis.
+- **Direita:** a conversa em balões (até 880 px). Listas viram tabelas de até 10 linhas; depois de cada resposta aparecem até 3 sugestões de próxima pergunta.
 - **Avisos:** chamados novos, rotina de automação terminada e queda/volta do Simpress aparecem no chat (e são falados com a voz ligada). Não passam pela IA.
-- **Abaixo de 1100 px:** os cartões viram uma faixa no topo e o orbe encolhe.
+- **Abaixo de 1100 px:** trilho e orbe encolhem, cartões em 2×2; Simpress, CPU/RAM e a linha de estado descem para uma barra no rodapé. Até 760 px os cartões viram lista. Em janela larga e baixa o orbe diminui (400/300 px).
 
 Teclado: `Tab` percorre orbe, conversa e campo; `Enter`/`Espaço` no orbe começa a falar; `Esc` cancela o cartão de confirmação.
 Animações de 150–300 ms; desligue com `JARVIS_REDUZIR_MOVIMENTO=1` (o núcleo fica parado).
@@ -69,7 +69,7 @@ O Jarvis não se conecta ao Chrome de automação (porta 9333); rotinas rodam pe
 
 ## Privacidade (LGPD)
 
-Usuário logado, apelido, nomes, e-mails e telefones viram tokens `[PESSOA_n]` antes de ir à IA. O mapa fica só na memória. A voz (Edge-TTS) fala o texto mascarado.
+Usuário logado, apelido, nomes, e-mails e telefones viram tokens `[PESSOA_n]` antes de ir à IA. O mapa fica só na memória. A voz (Edge-TTS) fala os nomes reais; esse texto vai à Microsoft para virar áudio.
 
 ## Variáveis de ambiente
 

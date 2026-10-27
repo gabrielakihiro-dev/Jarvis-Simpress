@@ -7,7 +7,7 @@ import math
 import time
 
 from PyQt6.QtCore import QLineF, QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF, QRadialGradient
+from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPolygonF, QRadialGradient
 from PyQt6.QtWidgets import QWidget
 
 from ui import theme
@@ -16,9 +16,12 @@ ROTULOS = {"ocioso": "Clique para falar", "pensando": "Pensando…",
            "falando": "Falando…", "ouvindo": "Ouvindo…",
            "dormindo": "Dormindo: diga “Hey Jarvis”",
            "mudo": "Microfone mudo (Ctrl+M para ativar)"}
+ATIVOS = frozenset({"ouvindo", "pensando", "falando"})  # nesses estados, clicar no orbe cancela
 
 DIST = 3.2           # distância da câmera em raios da esfera: menor = perspectiva mais forte
 N_PONTOS = 420
+N_PONTOS_GRANDE = 900  # acima de 220 px de diâmetro, como no orbe.js do Modelo 1b
+FAIXA_ROTULO = 40     # faixa fixa do rótulo: o texto não pula entre estados
 FAIXAS = 5           # pontos agrupados por profundidade: um drawPoints por faixa, do fundo para a frente
 N_ANEL = 72
 # (raio relativo à esfera, inclinação em X, inclinação em Y, velocidade do giro próprio)
@@ -78,6 +81,7 @@ def anel(raio: float, giro: float, ix: float, iy: float, n: int = N_ANEL) -> lis
 
 
 ESFERA = pontos_esfera(N_PONTOS)
+ESFERA_GRANDE = pontos_esfera(N_PONTOS_GRANDE)
 # onda: (cos, sin, ângulo) de cada vértice, calculados uma vez
 ONDA = [(math.cos(a), math.sin(a), a) for a in (2 * math.pi * k / 96 for k in range(96))]
 
@@ -89,7 +93,8 @@ class Orbe(QWidget):
         super().__init__(parent)
         self.estado = "ocioso"
         self._mudo = False
-        self._diametro = 140
+        self._diametro = 500
+        self._fonte_rotulo = 16
         self._t = 0.0
         self._giro = 0.6
         self._vel = VISUAL["ocioso"][1]
@@ -103,16 +108,19 @@ class Orbe(QWidget):
         self._timer.setInterval(16)  # ~60 fps
         self._timer.timeout.connect(self._passo)
         self.definir("ocioso")
-        self.compacto(False)
+        self.definir_diametro(500)
 
     @property
     def visual(self) -> str:
         """Estado desenhado: o mudo vale enquanto o Jarvis não está pensando nem falando."""
         return "mudo" if self._mudo and self.estado in ("ocioso", "dormindo", "ouvindo") else self.estado
 
-    def compacto(self, sim: bool) -> None:
-        self._diametro = 72 if sim else 140
-        self.setFixedHeight(self._diametro + 30)
+    def definir_diametro(self, d: int, fonte_rotulo: int = 16, largura: int = 0) -> None:
+        """Diâmetro do núcleo (160–520 px) e tamanho do rótulo; borda de foco de 2 px em volta de tudo.
+        `largura` alarga só a faixa do rótulo (o trilho), para o texto não cortar quando o orbe é pequeno."""
+        self._diametro = max(160, min(520, d))
+        self._fonte_rotulo = fonte_rotulo
+        self.setFixedSize(max(self._diametro + 4, largura), self._diametro + FAIXA_ROTULO + 4)
         self.update()
 
     def escuta(self, ligada: bool) -> None:
@@ -130,7 +138,8 @@ class Orbe(QWidget):
     def definir(self, estado: str) -> None:
         self.estado = estado
         rotulo = ROTULOS[self.visual]
-        acao = "" if self.visual == "mudo" else " Enter ou Espaço para falar."
+        acao = ("" if self.visual == "mudo" else
+                " Enter ou Espaço para cancelar." if estado in ATIVOS else " Enter ou Espaço para falar.")
         self.setAccessibleName(f"Orbe do Jarvis: {rotulo}.{acao}")
         self.setAccessibleDescription(f"Núcleo animado do Jarvis. Estado: {rotulo}")
         self._sincronizar()
@@ -184,7 +193,7 @@ class Orbe(QWidget):
                 c = QColor(cor)
                 c.setAlpha(alfa)
                 g.setColorAt(pos, c)
-            self._brilho = {chave: QBrush(g)}  # só o tamanho atual: troca ao entrar/sair do modo compacto
+            self._brilho = {chave: QBrush(g)}  # só o tamanho atual: troca quando o diâmetro muda
         return self._brilho[chave]
 
     def _amplitude(self, onda) -> float:
@@ -196,7 +205,7 @@ class Orbe(QWidget):
             return 0.3 + 0.2 * math.sin(self._t * 6)
         return 0.0
 
-    def _desenhar_anel(self, p: QPainter, pts: list, cor: QColor, frente: bool, inten: float) -> None:
+    def _desenhar_anel(self, p: QPainter, pts: list, cor: QColor, frente: bool, inten: float, k: float) -> None:
         """pts: (x, y, z) já projetados na tela, com o z original para separar frente e fundo."""
         linhas = []
         for i, (x, y, z) in enumerate(pts):
@@ -205,7 +214,7 @@ class Orbe(QWidget):
                 linhas.append(QLineF(x2, y2, x, y))
         c = QColor(cor)
         c.setAlpha(int((200 if frente else 60) * inten))
-        p.setPen(QPen(c, 1.6 if frente else 1.0))
+        p.setPen(QPen(c, (1.6 if frente else 1.0) * k))
         p.drawLines(linhas)
 
     def paintEvent(self, _ev) -> None:
@@ -219,7 +228,8 @@ class Orbe(QWidget):
         t = 0.0 if estatico else self._t
         giro = 0.6 if estatico else self._giro
         r = d * 0.27
-        p.translate(self.width() / 2, d / 2 + 4)
+        k = math.sqrt(d / 140)  # espessuras crescem menos que o diâmetro
+        p.translate(self.width() / 2, d / 2 + 2)
 
         amp = 0.0 if estatico and onda != "mic" else self._amplitude(onda)
         p.setPen(Qt.PenStyle.NoPen)
@@ -233,24 +243,23 @@ class Orbe(QWidget):
             pts = anel(raio, giro * v, ix + 0.15 * math.sin(t * 0.3 + i), iy + giro * 0.25)
             aneis.append([(*projetar(x, y, z, r)[:2], z) for x, y, z in pts])
         for pts in aneis:
-            self._desenhar_anel(p, pts, cor, False, inten)
+            self._desenhar_anel(p, pts, cor, False, inten, k)
 
         faixas = [[] for _ in range(FAIXAS)]
-        for x, y, z in girar(ESFERA, 0.35 + 0.2 * math.sin(t * 0.4), giro):
-            f = r * DIST / (DIST - z)  # projetar() em linha: roda 420 vezes por quadro
+        for x, y, z in girar(ESFERA_GRANDE if d > 220 else ESFERA, 0.35 + 0.2 * math.sin(t * 0.4), giro):
+            f = r * DIST / (DIST - z)  # projetar() em linha: roda centenas de vezes por quadro
             faixas[min(FAIXAS - 1, int((z + 1) / 2 * FAIXAS))].append(QPointF(x * f, -y * f))
-        escala = d / 140
         for i, pts in enumerate(faixas):
             prof = (i + 0.5) / FAIXAS
             c = QColor(cor)
             c.setAlpha(int((35 + 200 * prof) * inten))
-            caneta = QPen(c, (1.0 + 2.2 * prof) * escala)
+            caneta = QPen(c, (1.0 + 2.2 * prof) * k)
             caneta.setCapStyle(Qt.PenCapStyle.RoundCap)
             p.setPen(caneta)
             p.drawPoints(QPolygonF(pts))
 
         for pts in aneis:
-            self._desenhar_anel(p, pts, cor, True, inten)
+            self._desenhar_anel(p, pts, cor, True, inten, k)
 
         nucleo = QColor(theme.TEXT if visual not in ("dormindo", "mudo") else cor_hex)
         nucleo.setAlpha(int(220 * inten))
@@ -265,13 +274,23 @@ class Orbe(QWidget):
                 (c, s, base + extra * (0.6 * sin(6 * a + t * 3) + 0.4 * sin(11 * a - t * 5))) for c, s, a in ONDA)])
             c = QColor(cor)
             c.setAlpha(int(90 + 140 * min(1.0, amp)))
-            p.setPen(QPen(c, 1.4))
+            p.setPen(QPen(c, 1.4 * k))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPolygon(contorno)
 
         p.resetTransform()
-        p.setPen(QColor(theme.TEXT_SECONDARY))
-        p.drawText(QRectF(0, d + 8, self.width(), 20), Qt.AlignmentFlag.AlignCenter, ROTULOS[visual])
+        topo = d + 4  # 2 px de borda + 2 px de respiro, como .orbe__faixa
+        fonte = QFont(self.font())
+        fonte.setPixelSize(self._fonte_rotulo)
+        p.setFont(fonte)
+        p.setPen(QColor(theme.TEXT))
+        alto = self._fonte_rotulo + 4
+        p.drawText(QRectF(0, topo, self.width(), alto), Qt.AlignmentFlag.AlignCenter, ROTULOS[visual])
+        if visual in ATIVOS:
+            fonte.setPixelSize(12)
+            p.setFont(fonte)
+            p.setPen(QColor(theme.TEXT_SECONDARY))
+            p.drawText(QRectF(0, topo + alto + 2, self.width(), 16), Qt.AlignmentFlag.AlignCenter, "Clique para cancelar")
         if self.hasFocus():
             p.setPen(QPen(QColor(theme.CYAN), 2))
             p.setBrush(Qt.BrushStyle.NoBrush)

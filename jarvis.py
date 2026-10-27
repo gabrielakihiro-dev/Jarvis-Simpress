@@ -187,7 +187,7 @@ def main():
         console.print("\n[bold blue]🤖 Jarvis:[/bold blue]")
         console.print(Markdown(resposta.texto))
 
-        # A voz usa o texto mascarado: o Edge-TTS envia o texto à Microsoft.
+        # A voz fala os nomes reais; o Edge-TTS envia esse texto à Microsoft.
         voice.falar(resposta.texto_voz)
 
 

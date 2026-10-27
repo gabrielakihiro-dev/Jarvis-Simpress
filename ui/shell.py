@@ -1,18 +1,19 @@
-"""Janela principal do Jarvis: barra do topo, cartões de status à esquerda e chat com orbe no centro."""
+"""Janela principal do Jarvis (Modelo 1b, tela dividida): topo, trilho com orbe e cartões à esquerda, chat à direita."""
 
 import os
 from pathlib import Path
 
 from dotenv import set_key
-from PyQt6.QtCore import QThread, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction, QDesktopServices, QKeySequence, QShortcut
+from PyQt6.QtCore import QThread, Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QAction, QDesktopServices, QFontMetrics, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QBoxLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
     QWidgetAction,
@@ -26,6 +27,15 @@ from ui.chat_panel import ChatPanel
 from ui.widgets import MEDIDOR_DISPONIVEL, IndicadorStatus, MedidorSistema, botao
 
 LARGURA_COMPACTA = 1100
+LARGURA_LISTA = 760
+CHAT_MAX = 880
+# medidas de cada faixa de largura (jarvis-1b.css): trilho, colunas e largura dos cartões, espaço entre eles,
+# espaço acima dos cartões, fonte do rótulo do orbe, padding do chat (topo, lados, base) e largura do nome do modelo
+FAIXAS = {
+    "larga": dict(trilho=600, colunas=4, cartao=132, gap=8, margem=24, fonte=16, chat=(16, 24, 12), modelo=260),
+    "media": dict(trilho=304, colunas=2, cartao=137, gap=6, margem=16, fonte=15, chat=(12, 12, 8), modelo=260),
+    "lista": dict(trilho=224, colunas=1, cartao=200, gap=4, margem=12, fonte=14, chat=(12, 12, 8), modelo=150),
+}
 INTERVALO_STATUS_S = 10
 ARQUIVO_ENV = Path(__file__).resolve().parent.parent / ".env"
 
@@ -36,6 +46,15 @@ CARTOES = [
     ("automacao", "Automação", "Qual é o status da automação?"),
     ("pendencias", "Pendências", "Quais são as pendências operacionais?"),
 ]
+
+
+def faixa(largura: int, altura: int) -> tuple:
+    """(nome da faixa, diâmetro do orbe). Janela larga e baixa encolhe o orbe para caber rótulo e cartões."""
+    if largura <= LARGURA_LISTA:
+        return "lista", 192
+    if largura < LARGURA_COMPACTA:
+        return "media", 268
+    return "larga", 300 if altura <= 640 else 400 if altura <= 760 else 500
 
 
 class StatusWorker(QThread):
@@ -111,7 +130,8 @@ class JarvisShell(QMainWindow):
 
         self.simpress = SimpressClient()
         self.llm = LLMClient(self.simpress)
-        self._compacto = None
+        self._faixa = ""
+        self._diametro = 0
         self._ultimo: dict = {}
         self._cartoes = {}
 
@@ -123,21 +143,17 @@ class JarvisShell(QMainWindow):
         col.setSpacing(0)
 
         self.chat = ChatPanel(self.llm)
-        self.chat.setMaximumWidth(880)
         col.addWidget(self._criar_topo())
 
-        corpo = QWidget()
-        # esquerda→direita no desktop; abaixo de 1100 px os cartões viram faixa no topo
-        self._lay_corpo = QBoxLayout(QBoxLayout.Direction.LeftToRight, corpo)
-        self._lay_corpo.setContentsMargins(0, 0, 0, 0)
-        self._lay_corpo.setSpacing(0)
-        self._lay_corpo.addWidget(self._criar_status())
-        centro = QHBoxLayout()
-        centro.addStretch(1)
-        centro.addWidget(self.chat, 100)
-        centro.addStretch(1)
-        self._lay_corpo.addLayout(centro, 1)
-        col.addWidget(corpo, 1)
+        corpo = QHBoxLayout()
+        corpo.setContentsMargins(0, 0, 0, 0)
+        corpo.setSpacing(0)
+        corpo.addWidget(self._criar_trilho())
+        corpo.addWidget(self.chat, 1)
+        corpo.addStretch(0)  # como .chat > *: até 880 px, alinhado à esquerda; a sobra fica à direita
+        col.addLayout(corpo, 1)
+        col.addWidget(self._criar_barra_inferior())
+        self.setTabOrder(self.chat.orbe, self.chat.texto)
 
         self.chat.mudou_estado.connect(self._atualizar_ia)
         self._atualizar_ia()
@@ -164,8 +180,8 @@ class JarvisShell(QMainWindow):
         lay.addWidget(logo)
         self.ind_servidor = IndicadorStatus("Simpress")
         lay.addWidget(self.ind_servidor)
-        if MEDIDOR_DISPONIVEL:
-            self.medidor = MedidorSistema()
+        self.medidor = MedidorSistema() if MEDIDOR_DISPONIVEL else None
+        if self.medidor:
             lay.addWidget(self.medidor)
         lay.addStretch(1)
         self.lbl_escuta = QLabel("💤 em espera")
@@ -200,29 +216,57 @@ class JarvisShell(QMainWindow):
         self.acao_escuta.setCheckable(True)
         self.acao_escuta.toggled.connect(self._escuta)
         menu.addAction(self.acao_escuta)
-        btn_menu = botao("⚙", "fantasma", "Modelo, navegador, importação, nova conversa e escuta ativa", "Configurações")
+        btn_menu = botao("⚙ ▼", "fantasma", "Modelo, navegador, importação, nova conversa e escuta ativa", "Configurações")
+        btn_menu.setObjectName("menu")  # a seta é o ▼ do texto, como no 1b; o QSS esconde a seta do Qt
         btn_menu.setMenu(menu)
         lay.addWidget(btn_menu)
         return topo
 
-    def _criar_status(self) -> QFrame:
-        self.painel_status = QFrame()
-        self.painel_status.setObjectName("status")
-        self._lay_status = QBoxLayout(QBoxLayout.Direction.TopToBottom, self.painel_status)
-        self._lay_status.setContentsMargins(*(theme.SP["md"],) * 4)
-        self._lay_status.setSpacing(theme.SP["sm"])
+    def _criar_trilho(self) -> QFrame:
+        """Trilho da esquerda: orbe grande e, embaixo, os cartões de status."""
+        self.trilho = QFrame()
+        self.trilho.setObjectName("trilho")
+        lay = QVBoxLayout(self.trilho)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addStretch(1)
+        lay.addWidget(self.chat.orbe, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.painel_status = QWidget()
+        self._grade = QGridLayout(self.painel_status)
+        lay.addWidget(self.painel_status, 0, Qt.AlignmentFlag.AlignHCenter)
+        lay.addStretch(1)
         for chave, rotulo, pergunta in CARTOES:
             b = botao("", "status", f"{rotulo}: clique para perguntar ao Jarvis", rotulo)
             b.clicked.connect(lambda _=False, p=pergunta: self.chat.enviar(p))
             self._cartoes[chave] = (b, rotulo)
             self._definir_cartao(chave, "neutro", "—")
-            self._lay_status.addWidget(b)
-        self._lay_status.addStretch(1)
-        return self.painel_status
+        return self.trilho
+
+    def _criar_barra_inferior(self) -> QFrame:
+        """Abaixo de 1100 px, o estado do chat, o Simpress e CPU/RAM descem para esta barra."""
+        self.barra = QFrame()
+        self.barra.setObjectName("barra_inferior")
+        self.barra.setFixedHeight(28)
+        lay = QHBoxLayout(self.barra)
+        lay.setContentsMargins(theme.SP["md"], 0, theme.SP["md"], 0)
+        lay.setSpacing(theme.SP["lg"])
+        self.lbl_estado = QLabel(self.chat.rodape.text())  # o aviso inicial chega antes desta ligação
+        self.lbl_estado.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.lbl_estado.setObjectName("estado")
+        self.lbl_estado.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.lbl_estado.setAccessibleName("Estado do assistente")
+        self.lbl_estado.linkActivated.connect(lambda _: self.chat.escuta.definir_mudo(False))  # aviso de mudo
+        self.chat.mudou_rodape.connect(self.lbl_estado.setText)
+        lay.addWidget(self.lbl_estado, 1)
+        self.ind_servidor_barra = IndicadorStatus("Simpress")
+        lay.addWidget(self.ind_servidor_barra)
+        if MEDIDOR_DISPONIVEL:
+            lay.addWidget(MedidorSistema())
+        return self.barra
 
     def _definir_cartao(self, chave: str, nivel: str, valor: str) -> None:
         b, rotulo = self._cartoes[chave]
-        b.setText(f"{rotulo}  {valor}" if self._compacto else f"{rotulo}\n{valor}")
+        b.setText(f"{rotulo}  {valor}" if self._faixa == "lista" else f"{rotulo}\n{valor}")
         b.setAccessibleName(f"{rotulo}: {valor}. Clique para perguntar.")
         b.setProperty("nivel", nivel)
         b.style().unpolish(b)
@@ -255,12 +299,14 @@ class JarvisShell(QMainWindow):
             self.chat.avisar(texto)
         self._ultimo = e
         if not e.get("online"):
-            self.ind_servidor.definir("erro", "offline")
+            for ind in (self.ind_servidor, self.ind_servidor_barra):
+                ind.definir("erro", "offline")
             for chave in self._cartoes:
                 self._definir_cartao(chave, "neutro", "—")
             return
         porta = e["url"].rsplit(":", 1)[-1]
-        self.ind_servidor.definir("ok", f"online :{porta}")
+        for ind in (self.ind_servidor, self.ind_servidor_barra):
+            ind.definir("ok", f"online :{porta}")
         self._definir_cartao("equipamentos", "ok", str(e.get("equipamentos", "—")))
         for chave in ("chamados", "pendencias"):
             n = e.get(chave)
@@ -275,29 +321,48 @@ class JarvisShell(QMainWindow):
 
     def _atualizar_ia(self) -> None:
         nivel = "ok" if self.llm.client else "erro"
-        self.ind_ia.definir(nivel, self.llm.modelo_principal.split("/")[-1] if self.llm.client else "sem chave")
+        nome = self.llm.modelo_principal.split("/")[-1] if self.llm.client else "sem chave"
+        limite = FAIXAS.get(self._faixa, FAIXAS["larga"])["modelo"]
+        self.ind_ia.definir(nivel, QFontMetrics(self.ind_ia.font()).elidedText(nome, Qt.TextElideMode.ElideRight, limite))
+        self.ind_ia.setToolTip(self.llm.modelo_principal)
         self.lbl_escuta.setVisible(self.chat.escuta.ligada)
 
     # --- layout responsivo --------------------------------------------------
 
     def _ajustar_layout(self) -> None:
-        compacto = self.width() < LARGURA_COMPACTA
-        if compacto == self._compacto:
+        nome, diametro = faixa(self.width(), self.height())
+        if (nome, diametro) == (self._faixa, self._diametro):
             return
-        self._compacto = compacto
-        d = QBoxLayout.Direction
-        self._lay_corpo.setDirection(d.TopToBottom if compacto else d.LeftToRight)
-        self._lay_status.setDirection(d.LeftToRight if compacto else d.TopToBottom)
-        if compacto:
-            self.painel_status.setMinimumWidth(0)
-            self.painel_status.setMaximumWidth(16777215)
-        else:
-            self.painel_status.setFixedWidth(200)
-        self.ind_ia.setVisible(not compacto)
-        self.chat.orbe.compacto(compacto)
+        mudou_faixa, self._faixa, self._diametro = nome != self._faixa, nome, diametro
+        f = FAIXAS[nome]
+        # faixa do rótulo na largura do trilho só nas faixas estreitas (“Microfone mudo (Ctrl+M…)” não cabe em 196 px)
+        self.chat.orbe.definir_diametro(diametro, f["fonte"], 0 if nome == "larga" else f["trilho"] - 2 * theme.SP["md"])
+        if not mudou_faixa:
+            return
+        larga = nome == "larga"
+        self.trilho.setFixedWidth(f["trilho"])
+        self.ind_servidor.setVisible(larga)
+        if self.medidor:
+            self.medidor.setVisible(larga)
+        self.barra.setVisible(not larga)
+        self.chat.rodape.setVisible(larga)  # a linha de estado vai para a barra inferior
+        topo, lado, base = f["chat"]
+        self.chat.layout().setContentsMargins(lado, topo, lado, base)
+        self.chat.setMaximumWidth(CHAT_MAX + 2 * lado)
+        self._grade.setContentsMargins(0, f["margem"], 0, 0)
+        self._grade.setSpacing(f["gap"])
+        for i, (b, _rotulo) in enumerate(self._cartoes.values()):
+            self._grade.removeWidget(b)
+            self._grade.addWidget(b, i // f["colunas"], i % f["colunas"])
+            b.setFixedWidth(f["cartao"])
+            b.setProperty("lista", nome == "lista")  # linha única de 32 px
+        self._atualizar_ia()
         if self._ultimo:  # redesenha os cartões no novo formato; sem "antes", não repete aviso
             anterior, self._ultimo = self._ultimo, {}
             self._aplicar_status(anterior)
+        else:
+            for chave in self._cartoes:
+                self._definir_cartao(chave, "neutro", "—")
 
     def resizeEvent(self, ev) -> None:
         super().resizeEvent(ev)

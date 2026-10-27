@@ -91,10 +91,15 @@ QToolTip {{ background: {SURFACE_ALT}; color: {TEXT}; border: 1px solid {BORDER_
 QFrame#hud {{ background: {SURFACE}; border-bottom: 1px solid {BORDER}; }}
 QFrame#menu {{ background: {SURFACE}; border-right: 1px solid {BORDER}; }}
 QFrame#chat {{ background: {BG}; }}
-QFrame#status {{ background: {SURFACE}; border-right: 1px solid {BORDER}; }}
+QFrame#trilho {{ background: {BG}; border-right: 1px solid {BORDER}; }}
+QFrame#barra_inferior {{ background: {SURFACE}; border-top: 1px solid {BORDER}; }}
+QFrame#barra_inferior QLabel {{ font-size: 12px; }}
+QFrame#barra_inferior QLabel#medidor {{ font-size: 10px; }}
 QTextBrowser#conversa {{ font-size: 11pt; border: none; }}
-QLineEdit#entrada {{ font-size: 11pt; padding: 8px {SP['md']}px; }}
+QLineEdit#entrada {{ font-size: 15px; padding: 8px {SP['md']}px; }}
 QPushButton[papel="status"] {{ text-align: left; padding: {SP['sm']}px {SP['md']}px; background: {SURFACE_ALT}; }}
+QPushButton#menu::menu-indicator {{ image: none; width: 0px; }}
+QPushButton[papel="status"][lista="true"] {{ min-height: 32px; max-height: 32px; padding: 0 10px; }}
 QPushButton[papel="status"][nivel="aviso"] {{ border-left: 3px solid {WARNING}; }}
 QPushButton[papel="status"][nivel="erro"] {{ border-left: 3px solid {ERROR}; }}
 QPushButton[papel="status"][nivel="ok"] {{ border-left: 3px solid {SUCCESS}; }}

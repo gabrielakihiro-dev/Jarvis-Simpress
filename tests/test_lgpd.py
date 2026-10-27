@@ -36,3 +36,31 @@ def test_texto_do_usuario_com_valor_conhecido_e_mascarado():
     m = Mascara()
     m.mascarar({"usuario_logado": "Maria Souza"})
     assert m.ocultar_conhecidos("quem é maria souza?") == "quem é [PESSOA_1]?"
+
+
+def test_anotacao_com_nome_e_mascarada_mesmo_antes_do_campo_usuario():
+    m = Mascara()
+    dados = {"itens": [
+        {"anotacao": "Maria Souza foi transferida para Cascavel", "serie": "S1"},
+        {"usuario": "Maria Souza", "serie": "S1"},
+    ]}
+    mascarado = m.mascarar(dados)
+    assert "Maria" not in str(mascarado)
+    assert mascarado["itens"][0]["anotacao"] == "[PESSOA_1] foi transferida para Cascavel"
+
+
+def test_nome_curto_nao_corrompe_palavra_maior():
+    m = Mascara()
+    m.mascarar({"usuario": "Ana"})
+    assert m.ocultar_conhecidos("Anabela e Ana") == "Anabela e [PESSOA_1]"
+    # Campo técnico (modelo) não passa pela troca de texto livre.
+    assert m.mascarar({"modelo": "Ana Pro"})["modelo"] == "Ana Pro"
+
+
+def test_nomes_da_base_mascaram_texto_e_sobrevivem_a_limpar():
+    m = Mascara()
+    m.registrar_base(["Joana Lima", "TI", " ", "Sem usuário registrado"])
+    assert m.ocultar_conhecidos("cadê a JOANA LIMA da TI?") == "cadê a [PESSOA_1] da TI?"
+    m.limpar()
+    assert m.ocultar_conhecidos("Joana Lima") == "[PESSOA_1]"
+    assert m.restaurar("[PESSOA_1]") == "Joana Lima"
