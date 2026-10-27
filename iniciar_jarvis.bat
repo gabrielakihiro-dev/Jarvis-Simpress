@@ -23,5 +23,8 @@ echo [3/3] Abrindo Interface Futurista PyQt6...
 echo.
 set SIMPRESS_URL=http://127.0.0.1:8000
 python jarvis_ui.py
-echo.
-pause
+if errorlevel 1 (echo.
+    echo O Jarvis fechou com erro. Veja a mensagem acima.
+    pause
+)
+exit
