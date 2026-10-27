@@ -1,6 +1,8 @@
 # J.A.R.V.I.S — Assistente operacional do Simpress
 
-Assistente desktop (PyQt6) com visual HUD escuro/ciano: um orbe, um chat em destaque e os números do Simpress ao lado. A IA (OpenRouter) usa as funções do servidor local; o Portal abre no navegador quando preciso.
+Assistente desktop (PyQt6) com visual HUD escuro/ciano: um núcleo 3D girando (esfera de pontos e anéis desenhados com QPainter, sem OpenGL), um chat em destaque e os números do Simpress ao lado. A IA (OpenRouter) usa as funções do servidor local; o Portal abre no navegador quando preciso.
+
+Destaques: chamada por voz “Hey Jarvis” (offline), conversa contínua que dorme sozinha, botão de microfone mudo, resposta falada curta e ferramentas plugáveis em `actions/`.
 
 ## Como iniciar
 
@@ -17,11 +19,18 @@ Assistente desktop (PyQt6) com visual HUD escuro/ciano: um orbe, um chat em dest
 - **Abaixo de 1100 px:** os cartões viram uma faixa no topo e o orbe encolhe.
 
 Teclado: `Tab` percorre orbe, conversa e campo; `Enter`/`Espaço` no orbe começa a falar; `Esc` cancela o cartão de confirmação.
-Animações de 150–300 ms; desligue com `JARVIS_REDUZIR_MOVIMENTO=1`.
+Animações de 150–300 ms; desligue com `JARVIS_REDUZIR_MOVIMENTO=1` (o núcleo fica parado).
+Medidores de CPU e RAM aparecem discretos no topo (precisam do `psutil`, já no `requirements.txt`).
+
+**Microfone mudo:** o botão do topo (ou `Ctrl+M`) descarta o áudio: o Jarvis não ouve nome, “cancelar” nem fala, e o núcleo mostra o estado “mudo”. Desmutar volta à espera sem acordar. O indicador de microfone do Windows continua aceso, porque o dispositivo segue aberto; o áudio é descartado.
 
 ## Chamar o Jarvis
 
 Clique no orbe (ou 🎤) ou diga **“Hey Jarvis”**. Toca um bipe; fale e ele para sozinho depois de 2 s de silêncio (máximo 20 s).
+
+**Conversa contínua:** depois que o Jarvis termina de falar, ele volta a ouvir sozinho, sem novo “Hey Jarvis”. Após 2 minutos sem você falar, ele dorme e volta a esperar pelo nome. “Cancelar” ou fechar o cartão de confirmação também encerra a conversa.
+
+**Resposta falada curta:** a voz lê só as primeiras 3 frases (até cerca de 280 caracteres), sem tabelas, e termina com “O restante está na tela.” O texto completo continua no chat; por isso a IA começa cada resposta por uma conclusão curta.
 
 “Hey Jarvis” exige a **Escuta ativa** (⚙ › Escuta ativa; fica salva como `JARVIS_ESCUTA=1` no `.env`). “Hey Jarvis” é reconhecido pelo **openwakeword** (modelo `hey_jarvis`, offline); “cancelar” continua no Vosk com o modelo `modelos_voz/vosk-model-small-pt-0.3` (baixar de https://alphacephei.com/vosk/models e descompactar ali; a pasta fica fora do Git). Se o openwakeword ou o modelo faltar, aparece um aviso e o Vosk volta a reconhecer “Jarvis” (dito como “jarbas”) como plano B; sem o modelo do Vosk, o clique no orbe continua funcionando.
 
@@ -39,7 +48,7 @@ Sensibilidade: `JARVIS_WAKE_LIMIAR` (0 a 1, padrão 0.5; suba se disparar sozinh
 
 O openwakeword usa o onnxruntime, que ainda não tem pacote para o Python 3.15. Por isso o Jarvis roda no **Python 3.13** (`winget install Python.Python.3.13`; confira com `py -3.13 --version`). Os `iniciar_jarvis*.bat` usam `.venv313` se existir; sem nenhuma pasta de ambiente, criam `.venv313` quando `py -3.13` existe (senão `.venv`, como antes); e com só a `.venv` antiga, seguem nela.
 
-Para migrar: `py -3.13 -m venv .venv313`, `.venv313\Scripts\python -m pip install -r requirements.txt` e o passo do modelo acima. Depois do merge, se quiser o nome antigo: feche o Jarvis, apague a `.venv` e renomeie `.venv313` para `.venv`. Recriar com `py -3.13 -m venv .venv` é mais seguro que renomear, porque os scripts dentro do ambiente guardam o caminho antigo.
+Para migrar: `py -3.13 -m venv .venv313`, `.venv313\Scripts\python -m pip install -r requirements.txt` e o passo do modelo acima. Os `.bat` fecham a janela do prompt quando o Jarvis fecha; só ficam parados (`pause`) se ele terminar com erro, para você ler a mensagem.
 
 ## Planilhas
 
@@ -48,6 +57,8 @@ Para migrar: `py -3.13 -m venv .venv313`, `.venv313\Scripts\python -m pip instal
 - **Importar arquivos que você já tem:** ⚙ › Importar planilhas… (ou peça ao Jarvis). Escolha a planilha do Endpoint e a da Simpress, confirme, e o Jarvis entrega o lote em `data/state/entrada_automatica/pendentes/` do Simpress (`SIMPRESS_DIR`). Ele confere o resultado a cada 5 s, por até 5 min.
 
 ## Ferramentas da IA
+
+Cada ferramenta é um arquivo em `actions/` (um item `TOOL` ou lista `TOOLS` com schema, função e, se altera dados, o texto do cartão). `tools/simpress_tools.py` descobre os módulos só dentro dessa pasta. Ferramenta sem `altera_dados` explícito conta como alteradora e exige confirmação.
 
 Leituras são livres. Alterações **sempre** mostram um cartão "Confirmar e executar / Cancelar" com texto montado pelo programa (nunca pela IA); no máximo uma alteração por turno.
 
