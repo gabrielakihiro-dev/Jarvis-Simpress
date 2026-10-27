@@ -12,7 +12,7 @@ if exist ".venv313\Scripts\activate.bat" (
     call ".venv\Scripts\activate.bat"
 )
 python jarvis.py
-if errorlevel 1 (echo.
+if %errorlevel% neq 0 (echo.
     echo O Jarvis fechou com erro. Veja a mensagem acima.
     pause
 )
