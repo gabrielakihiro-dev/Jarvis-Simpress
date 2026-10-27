@@ -1,7 +1,8 @@
-"""Escuta ativa: chama o Jarvis por duas palmas ou pela palavra "Jarvis", e grava a pergunta.
+"""Escuta ativa: chama o Jarvis por duas palmas ou por "Hey Jarvis", e grava a pergunta.
 
 Um único microfone (QAudioSource) alimenta tudo, em blocos de 50 ms, 16 kHz mono:
-- ouvindo: o detector de palmas e o Vosk (offline) rodam só neste computador;
+- ouvindo: o detector de palmas, o openwakeword ("Hey Jarvis") e o Vosk ("cancelar"; o nome, se o
+  openwakeword faltar) rodam offline, só neste computador;
 - gravando: o áudio vai para um buffer que para sozinho no silêncio e vira WAV.
 Só o áudio gravado depois de chamar o Jarvis sai do computador (para a transcrição).
 """
@@ -19,6 +20,8 @@ from typing import Optional
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 from PyQt6.QtMultimedia import QAudioFormat, QAudioSource, QMediaDevices
 from PyQt6.QtWidgets import QApplication
+
+from ui.palavra_chave import PalavraChaveWorker
 
 TAXA = 16000
 BLOCO_MS = 50
@@ -271,6 +274,8 @@ class Escuta(QObject):
         self._ignorar = 0
         self._detector = DetectorPalmas()
         self._vosk: Optional[VoskWorker] = None
+        self._wake: Optional[PalavraChaveWorker] = None
+        self._wake_ok = False  # "Hey Jarvis" carregou: o nome pelo Vosk (plano B) fica de fora para não chamar duas vezes
         self._dbg_pico, self._dbg_n = 0.0, 0
 
     @property
@@ -292,9 +297,19 @@ class Escuta(QObject):
             self._vosk.ouviu.connect(self._ouviu)
             self._vosk.falhou.connect(lambda m: self.aviso.emit(f"Chamar pelo nome desligado: {m}. Palmas e clique no orbe continuam."))
             self._vosk.start()
+        if self._wake is None:
+            self._wake = PalavraChaveWorker(self)
+            self._wake_ok = True
+            self._wake.ouviu.connect(lambda: self._acordar("nome"))
+            self._wake.falhou.connect(self._wake_falhou)
+            self._wake.start()
         if not self._abrir():
             self.ligada = False
         return self.ligada
+
+    def _wake_falhou(self, motivo: str) -> None:
+        self._wake_ok = False
+        self.aviso.emit(f"{motivo}. Chamar por “Jarvis” (modelo de voz), palmas e clique no orbe continuam.")
 
     def pausar(self, motivo: str, ativo: bool) -> None:
         """Fala do Jarvis, espera da IA e cartão de confirmação pausam a escuta."""
@@ -348,6 +363,9 @@ class Escuta(QObject):
         if self._vosk is not None:
             self._vosk.requestInterruption()
             self._vosk.wait(2000)
+        if self._wake is not None:
+            self._wake.requestInterruption()
+            self._wake.wait(2000)
         self._gravando = False
         self._fechar()
 
@@ -358,6 +376,8 @@ class Escuta(QObject):
         self._detector.limpar()
         if self._vosk is not None:
             self._vosk.zerar()
+        if self._wake is not None:
+            self._wake.zerar()
 
     def _retomar_depois(self) -> None:
         QTimer.singleShot(500, self._retomar)  # espera o esfriamento do bipe e da fala
@@ -375,7 +395,8 @@ class Escuta(QObject):
 
     def _ouviu(self, palavra: str) -> None:
         if palavra != "cancelar":
-            self._acordar("nome")
+            if not self._wake_ok:
+                self._acordar("nome")
         elif self.ligada and self._pausas and not self._gravando:
             self.cancelou.emit()
 
@@ -467,5 +488,8 @@ class Escuta(QObject):
             return
         if self._detector.alimentar(p):
             self._acordar("palmas")
-        elif self._vosk is not None:
-            self._vosk.alimentar(bloco)
+        else:
+            if self._wake is not None and self._wake_ok:
+                self._wake.alimentar(bloco)
+            if self._vosk is not None:
+                self._vosk.alimentar(bloco)
