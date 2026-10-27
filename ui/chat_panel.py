@@ -27,8 +27,8 @@ from llm_client import MODELOS_CATALOGO, LLMClient, Resposta, listar_modelos_ao_
 from ui import theme
 from ui.cartoes import cartao_html
 from ui.escuta import Escuta
-from ui.orbe import Orbe
-from ui.widgets import CartaoConfirmacao, botao, renderizar
+from ui.orbe import ATIVOS, Orbe
+from ui.widgets import CartaoConfirmacao, FluxoLayout, botao, renderizar
 
 # Os cartões de status da esquerda já perguntam totais, chamados, automação e pendências.
 ACOES_RAPIDAS = [
@@ -122,6 +122,7 @@ class TranscreveWorker(QThread):
 
 class ChatPanel(QFrame):
     mudou_estado = pyqtSignal()     # modelo, voz ou escuta mudaram
+    mudou_rodape = pyqtSignal(str)  # HTML do rodapé, repetido na barra inferior abaixo de 1100 px
 
     def __init__(self, llm: LLMClient, parent=None):
         super().__init__(parent)
@@ -173,8 +174,7 @@ class ChatPanel(QFrame):
 
         self.orbe = Orbe()
         self.orbe.clicado.connect(self._clicou_orbe)
-        self.escuta.nivel.connect(self.orbe.definir_nivel)
-        lay.addWidget(self.orbe)
+        self.escuta.nivel.connect(self.orbe.definir_nivel)  # a janela põe o orbe no trilho da esquerda
 
         self.texto = QTextBrowser()
         self.texto.setObjectName("conversa")
@@ -188,33 +188,30 @@ class ChatPanel(QFrame):
         self.cartao.decidido.connect(self._decidiu)
         lay.addWidget(self.cartao)
 
-        self._linha_sugestoes = QHBoxLayout()
-        self._linha_sugestoes.setSpacing(theme.SP["xs"])
-        self._linha_sugestoes.addStretch(1)
+        self._linha_sugestoes = FluxoLayout(espaco=theme.SP["xs"])
         self._sugestoes: list = []
         lay.addLayout(self._linha_sugestoes)
 
         chips = QWidget()
-        cl = QHBoxLayout(chips)
-        cl.setContentsMargins(0, 0, 0, 0)
-        cl.setSpacing(theme.SP["xs"])
+        cl = FluxoLayout(chips, theme.SP["xs"])
         self._chips = []
         for rotulo, pergunta in ACOES_RAPIDAS:
             b = botao(rotulo, "chip", pergunta)
             b.clicked.connect(lambda _=False, p=pergunta: self.enviar(p))
             self._chips.append(b)
             cl.addWidget(b)
-        cl.addStretch(1)
         lay.addWidget(chips)
 
         entrada = QHBoxLayout()
         self.campo = QLineEdit()
         self.campo.setObjectName("entrada")
+        self.campo.setFixedHeight(40)
         self.campo.setPlaceholderText("Pergunte sobre equipamentos, chamados, automação…")
         self.campo.setAccessibleName("Mensagem para o assistente")
         self.campo.returnPressed.connect(self._enviar_campo)
         self.btn_mic = botao("🎤", "fantasma", "Falar com o Jarvis: clique para gravar; para sozinho quando você para de falar", "Falar com o Jarvis")
         self.btn_mic.clicked.connect(self._clicou_orbe)
+        self.btn_mic.setFixedWidth(40)
         self.btn_enviar = botao("Enviar", "primario")
         self.btn_enviar.clicked.connect(self._enviar_campo)
         entrada.addWidget(self.campo, 1)
@@ -231,7 +228,6 @@ class ChatPanel(QFrame):
         self.rodape.linkActivated.connect(lambda _: self.escuta.definir_mudo(False))  # só o aviso de mudo tem link
         lay.addWidget(self.rodape)
 
-        self.setTabOrder(self.orbe, self.texto)
         self.setTabOrder(self.texto, self.campo)
         self._atualizar_voz()
         self._mensagem("Jarvis", "Pronto. Pergunte, use um cartão ao lado ou chame pelo orbe. Alterações só acontecem depois da sua confirmação.")
@@ -258,7 +254,11 @@ class ChatPanel(QFrame):
 
     def _rodape(self, msg: str, erro: bool = False) -> None:
         cor = theme.ERROR if erro else theme.TEXT_SECONDARY
-        self.rodape.setText(f"<span style='color:{cor}'>{html.escape(msg)}</span>")
+        self._definir_rodape(f"<span style='color:{cor}'>{html.escape(msg)}</span>")
+
+    def _definir_rodape(self, trecho: str) -> None:
+        self.rodape.setText(trecho)
+        self.mudou_rodape.emit(trecho)
 
     def _ocupado(self, ocupado: bool) -> None:
         for w in (self.campo, self.btn_enviar, self.btn_mic, self.combo, *self._chips, *self._sugestoes):
@@ -279,7 +279,7 @@ class ChatPanel(QFrame):
         for p in perguntas[:3]:
             b = botao(f"↳ {p}", "chip", "Sugestão de próxima pergunta", p)
             b.clicked.connect(lambda _=False, q=p: self.enviar(q))
-            self._linha_sugestoes.insertWidget(len(self._sugestoes), b)  # antes do espaçador
+            self._linha_sugestoes.addWidget(b)
             self._sugestoes.append(b)
 
     def focar_entrada(self) -> None:
@@ -313,7 +313,8 @@ class ChatPanel(QFrame):
             self.mudou_estado.emit()
 
     def _alternar_voz(self) -> None:
-        voice.alternar_voz()
+        if not voice.alternar_voz():
+            self._parar_fala()  # desligou: cala na hora, sem esperar o trecho atual acabar
         self._atualizar_voz()
         self.mudou_estado.emit()
 
@@ -517,7 +518,8 @@ class ChatPanel(QFrame):
         self._fala.start()
 
     def _tocar(self, caminho: str) -> None:
-        if isinstance(self.sender(), FalaWorker) and self.sender() is not self._fala:  # trecho de fala já interrompida
+        origem = self.sender()
+        if isinstance(origem, FalaWorker) and (origem is not self._fala or origem.isInterruptionRequested()):  # trecho de fala já interrompida
             if caminho and os.path.exists(caminho):
                 os.remove(caminho)
             return
@@ -590,16 +592,17 @@ class ChatPanel(QFrame):
             self._rodape("Microfone ligado.")
 
     def _avisar_mudo(self) -> None:
-        self.rodape.setText(f"<a href='mudo' style='color:{theme.WARNING}'>Microfone mudo — clique para ativar</a>")
+        self._definir_rodape(f"<a href='mudo' style='color:{theme.WARNING}'>Microfone mudo — clique para ativar</a>")
 
     def _clicou_orbe(self) -> None:
         if self.escuta.mudo:
             self._avisar_mudo()
             return
-        if self.escuta.esta_gravando:
-            self.escuta.parar(True)
-        elif not self._ocupado_agora() and not (self._transcricao is not None and self._transcricao.isRunning()):
-            self._parar_fala()
+        # Ativo (ouvindo, pensando, falando ou com cartão aberto): o clique cancela, como dizer “cancelar”.
+        if (self._ocupado_agora() or self.orbe.estado in ATIVOS
+                or (self._transcricao is not None and self._transcricao.isRunning())):
+            self.cancelar()
+        else:
             self.escuta.gravar()
 
     def _gravando(self, sim: bool) -> None:

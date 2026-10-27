@@ -3,12 +3,13 @@
 import html
 import re
 
-from PyQt6.QtCore import QPropertyAnimation, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QPoint, QPropertyAnimation, QRect, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -45,6 +46,61 @@ class IndicadorStatus(QLabel):
                 f"<b>{html.escape(valor)}</b>"
         self.setText(texto)
         self.setAccessibleName(f"{self._rotulo}: {valor}")
+
+
+class FluxoLayout(QLayout):
+    """Itens lado a lado que descem para a linha de baixo quando não cabem (como flex-wrap)."""
+
+    def __init__(self, parent=None, espaco: int = 4):
+        super().__init__(parent)
+        self._itens: list = []
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(espaco)
+
+    def addItem(self, item) -> None:
+        self._itens.append(item)
+
+    def count(self) -> int:
+        return len(self._itens)
+
+    def itemAt(self, i: int):
+        return self._itens[i] if 0 <= i < len(self._itens) else None
+
+    def takeAt(self, i: int):
+        return self._itens.pop(i) if 0 <= i < len(self._itens) else None
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, largura: int) -> int:
+        return self._dispor(QRect(0, 0, largura, 0), aplicar=False)
+
+    def setGeometry(self, rect: QRect) -> None:
+        super().setGeometry(rect)
+        self._dispor(rect, aplicar=True)
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:
+        tam = QSize()
+        for item in self._itens:
+            tam = tam.expandedTo(item.minimumSize())
+        return tam
+
+    def _dispor(self, rect: QRect, aplicar: bool) -> int:
+        x, y, alto_linha = rect.x(), rect.y(), 0
+        for item in self._itens:
+            if item.widget() and item.widget().isHidden():
+                continue
+            dica = item.sizeHint()
+            if x > rect.x() and x + dica.width() > rect.right() + 1:
+                x, y, alto_linha = rect.x(), y + alto_linha + self.spacing(), 0
+            if aplicar:
+                item.setGeometry(QRect(QPoint(x, y), dica))
+            x += dica.width() + self.spacing()
+            alto_linha = max(alto_linha, dica.height())
+        return y + alto_linha - rect.y()
 
 
 def texto_medidor(nome: str, pct: float) -> str:

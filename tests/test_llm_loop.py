@@ -7,8 +7,14 @@ from llm_client import LLMClient
 class FakeSimpress:
     base_url = "http://127.0.0.1:8000"
 
-    def __init__(self):
+    def __init__(self, nomes=None):
         self.chamadas = []
+        self.nomes = nomes
+        self.buscas_de_nomes = 0
+
+    def listar_nomes_usuarios(self):
+        self.buscas_de_nomes += 1
+        return self.nomes
 
     def atualizar_apelido(self, serial, apelido):
         self.chamadas.append(("apelido", serial, apelido))
@@ -96,7 +102,13 @@ def test_usuario_nunca_vai_ao_modelo_mas_aparece_na_tela():
     enviado = json.dumps(llm.client.vistos[-1])
     assert "Maria" not in enviado
     assert r.texto == "O usuário é Maria Souza."
-    assert "Maria" not in r.texto_voz and "uma pessoa" in r.texto_voz
+    assert r.texto_voz == "O usuário é Maria Souza."
+
+
+def test_voz_troca_marcador_inventado_por_uma_pessoa():
+    llm = novo([_resp(content="Fale com [PESSOA_9].")])
+    r = llm.enviar_mensagem("oi")
+    assert r.texto == "Fale com [PESSOA_9]." and r.texto_voz == "Fale com uma pessoa."
 
 
 def test_erro_da_api_desfaz_mensagem_do_usuario():
@@ -106,3 +118,33 @@ def test_erro_da_api_desfaz_mensagem_do_usuario():
     antes = len(llm.mensagens)
     r = llm.enviar_mensagem("oi")
     assert "falhou" in r.texto and len(llm.mensagens) == antes
+
+
+def test_resposta_grande_e_cortada_depois_da_mascara():
+    llm = novo([])
+    itens = [{"usuario": f"Pessoa Numero {i}", "serie": f"S{i:04d}", "modelo": "x" * 200} for i in range(40)]
+    msg = llm._msg_tool("t1", "pesquisar_catalogo", {"dados": {"itens": itens}})
+    assert "trecho" in msg["content"]
+    assert "Pessoa Numero" not in msg["content"]
+
+
+def test_nome_da_base_digitado_vai_mascarado_e_volta_na_tela():
+    llm = LLMClient(FakeSimpress(nomes=["Joana Lima", "TI"]))
+    llm.client = FakeAPI([_resp(content="[PESSOA_1] está no notebook X.")])
+    r = llm.enviar_mensagem("onde está joana lima? fale com TI")
+    enviado = json.dumps(llm.client.vistos[0], ensure_ascii=False)
+    assert "Joana" not in enviado and "joana" not in enviado and "[PESSOA_1]" in enviado
+    assert "fale com TI" in enviado  # nome curto da base não é mascarado
+    assert "Joana Lima" in r.texto
+
+
+def test_base_offline_tenta_de_novo_na_proxima_mensagem():
+    simpress = FakeSimpress(nomes=None)
+    llm = LLMClient(simpress)
+    llm.client = FakeAPI([_resp(content="ok"), _resp(content="ok"), _resp(content="ok")])
+    llm.enviar_mensagem("oi")
+    simpress.nomes = ["Joana Lima"]
+    llm.enviar_mensagem("e a Joana Lima?")
+    llm.enviar_mensagem("de novo")
+    assert simpress.buscas_de_nomes == 2
+    assert "Joana" not in json.dumps(llm.client.vistos[1], ensure_ascii=False)

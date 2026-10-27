@@ -3,11 +3,11 @@
 Valores sensíveis (usuário logado, apelido, nomes) viram marcadores como
 `[PESSOA_1]` antes de ir ao modelo. O mapa vive só na memória do processo e
 nunca é gravado. Os marcadores voltam ao valor real nos argumentos das
-ferramentas e no texto mostrado na tela. A voz usa o texto mascarado.
+ferramentas, no texto mostrado na tela e na voz.
 """
 
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 # Telefone só com DDD, +55 ou hífen: números de OS/chamado (ex.: 12345678) ficam intactos.
@@ -25,6 +25,12 @@ CHAVES_SENSIVEIS = frozenset({
     "usuario_logado", "usuarios_logados", "usuario_manual", "usuario", "apelido",
     "nome", "nome_pessoa", "solicitante", "responsavel", "login", "email",
 })
+# Textos livres (escritos por pessoas) onde um nome conhecido pode aparecer no meio da frase.
+CHAVES_TEXTO_LIVRE = frozenset({
+    "anotacao", "descricao", "observacao", "motivo", "detalhes", "comentario", "mensagem", "erro",
+})
+SEM_USUARIO = "Sem usuário registrado"
+MIN_NOME_BASE = 3
 
 
 def limpar_texto_sensivel(texto: Any) -> str:
@@ -41,6 +47,8 @@ class Mascara:
     def __init__(self) -> None:
         self._por_valor: Dict[str, str] = {}
         self._por_marcador: Dict[str, str] = {}
+        self._base: List[str] = []
+        self._busca: Optional[Tuple[re.Pattern, Dict[str, str]]] = None
 
     def _marcador(self, valor: str) -> str:
         chave = valor.strip()
@@ -48,25 +56,62 @@ class Mascara:
             marcador = f"[PESSOA_{len(self._por_valor) + 1}]"
             self._por_valor[chave] = marcador
             self._por_marcador[marcador] = chave
+            self._busca = None
         return self._por_valor[chave]
 
+    def registrar_base(self, nomes: List[str]) -> None:
+        """Nomes da base do Simpress: viram marcadores já no início e sobrevivem a `limpar()`."""
+        # Nomes de 1–2 letras ("TI") trocariam pedaços comuns do texto.
+        self._base = [n.strip() for n in nomes if len(n.strip()) >= MIN_NOME_BASE and n.strip() != SEM_USUARIO]
+        for nome in self._base:
+            self._marcador(nome)
+
     def mascarar(self, obj: Any, chave: str = "") -> Any:
-        """Devolve cópia de `obj` com valores sensíveis trocados por marcadores."""
+        """Devolve cópia de `obj` com valores sensíveis trocados por marcadores.
+
+        Primeiro registra todos os valores sensíveis do resultado, para que uma
+        anotação que cite o nome seja mascarada mesmo vindo antes do campo do usuário.
+        """
+        self._registrar(obj, chave)
+        return self._trocar(obj, chave)
+
+    def _registrar(self, obj: Any, chave: str = "") -> None:
         if isinstance(obj, dict):
-            return {k: self.mascarar(v, str(k).lower()) for k, v in obj.items()}
+            for k, v in obj.items():
+                self._registrar(v, str(k).lower())
+        elif isinstance(obj, (list, tuple)):
+            for v in obj:
+                self._registrar(v, chave)
+        elif isinstance(obj, str) and chave in CHAVES_SENSIVEIS and obj.strip() and obj != SEM_USUARIO:
+            self._marcador(obj)
+
+    def _trocar(self, obj: Any, chave: str) -> Any:
+        if isinstance(obj, dict):
+            return {k: self._trocar(v, str(k).lower()) for k, v in obj.items()}
         if isinstance(obj, (list, tuple)):
-            return [self.mascarar(v, chave) for v in obj]
+            return [self._trocar(v, chave) for v in obj]
         if isinstance(obj, str):
-            if chave in CHAVES_SENSIVEIS and obj.strip() and obj != "Sem usuário registrado":
+            if chave in CHAVES_SENSIVEIS and obj.strip() and obj != SEM_USUARIO:
                 return self._marcador(obj)
-            return limpar_texto_sensivel(obj)
+            limpo = limpar_texto_sensivel(obj)
+            return self.ocultar_conhecidos(limpo) if chave in CHAVES_TEXTO_LIVRE else limpo
         return obj
 
     def ocultar_conhecidos(self, texto: str) -> str:
-        """Troca por marcador os valores já conhecidos que o usuário digitou no texto."""
-        for valor, marcador in self._por_valor.items():
-            texto = re.sub(re.escape(valor), marcador, texto, flags=re.IGNORECASE)
-        return texto
+        """Troca por marcador os valores já conhecidos que aparecem no texto (palavra inteira).
+
+        shortcut: só reconhece nomes já vistos nesta conversa; um nome nunca
+        consultado, digitado ou citado em anotação, segue como está.
+        """
+        if not self._por_valor:
+            return texto
+        if self._busca is None:
+            # Uma expressão só (a base pode ter milhares de nomes); mais longos primeiro: "Maria Souza" antes de "Maria".
+            valores = sorted(self._por_valor, key=len, reverse=True)
+            padrao = r"(?<!\w)(?:" + "|".join(re.escape(v) for v in valores) + r")(?!\w)"
+            self._busca = (re.compile(padrao, re.IGNORECASE), {v.casefold(): m for v, m in self._por_valor.items()})
+        busca, por_valor = self._busca
+        return busca.sub(lambda m: por_valor.get(m.group(0).casefold(), m.group(0)), texto)
 
     def restaurar(self, obj: Any) -> Any:
         """Troca marcadores conhecidos pelo valor real, em texto, dict ou lista."""
@@ -90,3 +135,6 @@ class Mascara:
     def limpar(self) -> None:
         self._por_valor.clear()
         self._por_marcador.clear()
+        self._busca = None
+        for nome in self._base:
+            self._marcador(nome)
