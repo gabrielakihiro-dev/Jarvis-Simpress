@@ -1,0 +1,12 @@
+@echo off
+chcp 65001 > nul
+title J.A.R.V.I.S Simpress - Modo Terminal
+echo ========================================================
+echo       INICIANDO O J.A.R.V.I.S SIMPRESS (TERMINAL)       
+echo ========================================================
+echo.
+cd /d "%~dp0"
+call ".venv\Scripts\activate.bat"
+python jarvis.py
+echo.
+pause
