@@ -1,64 +1,45 @@
-# 🤖 J.A.R.V.I.S — Assistente Operacional Simpress
+# J.A.R.V.I.S — Assistente operacional do Simpress
 
-Assistente com interface gráfica futurista em **PyQt5** (baseada na arquitetura do projeto de Rahees Ahmed) e modo terminal, integrado ao inventário local do **Simpress** (`http://127.0.0.1:8000`), síntese de voz natural (Edge-TTS) e inteligência artificial via **OpenRouter**.
+Casca desktop (PyQt5) com visual HUD escuro/ciano que reúne, numa só janela, as telas reais do Simpress e um assistente de IA (OpenRouter) com acesso às funções do servidor local.
 
----
+## Como iniciar
 
-## 🚀 Como Iniciar
+1. Ligue o Simpress (`iniciar_servidor.bat` na pasta do Simpress). O Jarvis acha a porta sozinho (começa por `SIMPRESS_URL` e varre 8000–8099).
+2. Copie `.env.example` para `.env` e preencha `OPENROUTER_API_KEY`.
+3. Dê dois cliques em `iniciar_jarvis.bat` (janela) ou `iniciar_jarvis_terminal.bat` (terminal).
 
-1. Certifique-se de que o Simpress local está ligado (em `http://127.0.0.1:8000`).
-2. Dê **dois cliques** no arquivo:
-   ```
-   iniciar_jarvis.bat
-   ```
-   *(Ele abrirá a **Interface Gráfica Futurista (GUI)**).*
-3. Se preferir rodar no terminal clássico, use:
-   ```
-   iniciar_jarvis_terminal.bat
-   ```
+## A janela
 
----
+- **Topo (HUD):** Simpress online/offline e porta, total de equipamentos, chamados abertos, estado da automação, modelo de IA e voz. Cada indicador tem ícone e texto, não só cor. Atualiza a cada 10 s.
+- **Menu lateral:** Início, Transporte, Resumo, Automação, Chamados, Comparação, Histórico de apelidos, Relatório mensal, Atualizar planilhas, Histórico de planilhas, Unidades. `F1`–`F8` seguem os atalhos do Cockpit.
+- **Centro:** a tela real do Simpress (QWebEngine). Com o servidor desligado aparece um aviso e o botão "Procurar de novo".
+- **Direita:** chat com o assistente (`Ctrl+J` mostra/esconde), ações rápidas e seletor de modelo.
+- **Abaixo de 1100 px:** o menu mostra só ícones e o chat vira painel sobreposto.
 
-## 🎨 Recursos da Interface Gráfica (Inspirada no Jarvis de Rahees Ahmed)
+Teclado: `Tab` percorre menu, tela e chat; `Esc` cancela o cartão de confirmação.
+Animações de 150–300 ms; desligue com `JARVIS_REDUZIR_MOVIMENTO=1`.
 
-- **HUD Espacial Escuro & Ciano:** Visual moderno em tons de azul escuro (`#0B1320`), painéis metálicos e detalhes ciano neon (`#40CFFF`).
-- **Arquitetura Assíncrona (`QThread`):** As consultas aos modelos de IA, ferramentas e geração de áudio rodam 100% em segundo plano, garantindo que a tela nunca congele.
-- **Seletor Dinâmico de Modelos:** Troque entre DeepSeek, Gemini, Claude, GPT e Llama diretamente no menu da janela, sem reiniciar nada.
-- **Botão de Áudio (TTS):** Ative ou silencie a voz com um único clique (`[🔊 ÁUDIO ATIVO]` / `[🔇 MUDO]`).
-- **Indicador de Conexão Simpress:** Exibe se o servidor local `127.0.0.1:8000` está online e a contagem de máquinas.
-- **Chips de Perguntas Rápidas:** Botões com um clique para consultar totais do inventário, chamados abertos, máquinas sem usuário logado e status de automação.
-- **Badges de Ferramentas:** Mostra visualmente quais ferramentas o Jarvis consultou para responder (ex.: `🔧 consultar_equipamento`).
+## Ferramentas da IA
 
----
+17 de leitura (livres) e 5 de alteração. Alterações **sempre** mostram um cartão "Confirmar e executar / Cancelar" com texto montado pelo programa (nunca pela IA); no máximo uma alteração por turno.
 
-## 🧠 Catálogo de Modelos (OpenRouter)
+Alteram dados (exigem confirmação): atualizar apelido, atualizar usuário, executar automação, cancelar automação, decidir pendência.
+Não viram ferramenta (use a tela): upload de planilha, restauração, exclusões, salvar equipamento/unidade, agendamento Sebrae.
 
-| # | Modelo | Características |
-| :-: | :--- | :--- |
-| **1** | `deepseek/deepseek-v4.1-flash-1017` | **Prioridade Máxima:** Raciocínio afiado, custo ultra-baixo e velocidade extrema. |
-| **2** | `deepseek/deepseek-v4.1-flash` | Versão estável do DeepSeek Flash. |
-| **3** | `google/gemini-2.5-flash` | **Fallback:** Resposta em milissegundos e suporte a contexto massivo. |
-| **4** | `openai/gpt-4o-mini` | Precisão cirúrgica em chamadas de ferramentas e estabilidade. |
-| **5** | `meta-llama/llama-3.3-70b-instruct` | Modelo aberto de ponta da Meta. |
-| **6** | `anthropic/claude-haiku-5.5:batch` | Respostas polidas e objetivas da Anthropic. |
+O Jarvis não se conecta ao Chrome de automação (porta 9333); rotinas rodam pelo servidor.
 
----
+## Privacidade (LGPD)
 
-## 🛠️ Ferramentas Locais Disponíveis
+Usuário logado, apelido, nomes, e-mails e telefones viram tokens `[PESSOA_n]` antes de ir à IA. O mapa fica só na memória. A voz (Edge-TTS) fala o texto mascarado.
 
-O Jarvis consulta o Simpress através das seguintes ferramentas em `tools/simpress_tools.py`:
+## Variáveis de ambiente
 
-1. `consultar_equipamento(serial)`: Localiza qualquer máquina por número de série (trata automaticamente séries de MacBook com ou sem o prefixo `S`).
-2. `pesquisar_catalogo(termo, cidade, categoria, usuario)`: Filtra máquinas por cidade, tipo ou status de usuário logado.
-3. `obter_totais_inventario()`: Informa o total oficial de computadores, unidades e alterações pendentes.
-4. `listar_chamados_abertos()`: Lista chamados e ordens de serviço (OS) em andamento.
-5. `consultar_status_automacao()`: Verifica o andamento das automações de navegador no Chrome.
-6. `consultar_ultima_comparacao()`: Exibe o resumo do último cruzamento de planilhas Simpress x Endpoint.
+`OPENROUTER_API_KEY`, `MODELO_PRINCIPAL`, `SIMPRESS_URL`, `JARVIS_REDUZIR_MOVIMENTO` (ver `.env.example`).
 
----
+## Testes
 
-## 🛡️ Segurança e Privacidade (LGPD)
+```
+.venv\Scripts\python -m pytest -q
+```
 
-- **Apenas Leitura:** O Jarvis não tem permissão para gravar, deletar ou modificar bases ou planilhas operacionais.
-- **Sanitização de Dados:** Antes de enviar qualquer texto para a IA, o Jarvis remove endereços detalhados e mascara e-mails e telefones.
-- **Privacidade no Provedor:** As requisições ao OpenRouter utilizam o parâmetro `data_collection: "deny"`, proibindo o uso dos dados para treinamento.
+Cobrem cliente HTTP, laço de ferramentas/confirmação, LGPD e contraste WCAG AA dos tokens. A janela em si foi verificada manualmente contra um servidor falso, não pela suíte.
