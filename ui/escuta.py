@@ -114,9 +114,9 @@ class DetectorPalmas:
 
 
 class CorteSilencio:
-    """Diz quando parar a gravação: "fim" após 2 s de silêncio depois da voz, "vazio" sem voz em 5 s."""
+    """Diz quando parar a gravação: "fim" após 1,5 s de silêncio depois da voz, "vazio" sem voz em 5 s."""
 
-    def __init__(self, ruido: float = 0.0, silencio_ms: int = 2000, max_ms: int = 20000, espera_ms: int = 5000):
+    def __init__(self, ruido: float = 0.0, silencio_ms: int = 1500, max_ms: int = 20000, espera_ms: int = 5000):
         self.minimo = min(max(0.04, ruido * 3), 0.3)  # teto: sala barulhenta não pode esconder a voz
         self.silencio_ms, self.max_ms, self.espera_ms = silencio_ms, max_ms, espera_ms
         self.t = self._ultimo = 0
