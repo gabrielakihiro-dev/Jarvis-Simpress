@@ -4,4 +4,4 @@ python-dotenv>=1.0.0
 edge-tts>=6.1.10
 rich>=13.7.0
 PyQt6>=6.7
-PyQt6-WebEngine>=6.7
+vosk>=0.3.41

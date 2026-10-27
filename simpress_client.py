@@ -7,7 +7,10 @@ qualquer dado seguir para a inteligência artificial.
 
 import json
 import os
+import re
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -21,6 +24,12 @@ TIMEOUT_VARREDURA = 0.3
 
 ROTINAS_VALIDAS = ("login", "os", "inventarios", "ambas", "usuarios", "sebrae")
 DECISOES_VALIDAS = ("permitir", "recusar", "remover", "manter")
+EXPORTACOES = {
+    "equipamentos": "/api/exportar-equipamentos",
+    "chamados": "/api/operacoes/chamados/exportar",
+    "historico": "/api/historico-comparacoes/exportar/excel",
+}
+PASTA_DOWNLOADS = Path.home() / "Downloads"
 
 # Limites para o texto devolvido à IA não estourar o contexto do modelo.
 MAX_ITENS_LISTA = 20
@@ -304,7 +313,26 @@ class SimpressClient:
         return self._leitura("/api/prontidao")
 
     def listar_pendencias_operacionais(self) -> Dict[str, Any]:
-        return self._leitura("/api/operacoes/pendencias")
+        """Versão enxuta: contagem por seção e série/computador/motivo de cada item."""
+        ok, dados = self._chamar("GET", "/api/operacoes/pendencias")
+        if not ok:
+            return {"erro": dados}
+        itens = []
+        for p in dados.get("pendencias") or []:
+            item = p.get("item") if isinstance(p, dict) and isinstance(p.get("item"), dict) else {}
+            itens.append({
+                "secao": p.get("secao", "") if isinstance(p, dict) else "",
+                "serie": item.get("serie", ""),
+                "computador": item.get("computador", ""),
+                "motivo": limpar_texto_sensivel(str(item.get("motivo") or "")),
+            })
+        return {
+            "horario": (dados.get("evento") or {}).get("horario", ""),
+            "total": len(itens),
+            "por_secao": dict(Counter(i["secao"] for i in itens)),
+            "itens": itens[:MAX_ITENS_LISTA],
+            "omitidos": max(0, len(itens) - MAX_ITENS_LISTA),
+        }
 
     def linha_do_tempo_chamados(self, serial: str) -> Dict[str, Any]:
         serial = serial.strip().upper()
@@ -331,7 +359,48 @@ class SimpressClient:
         return self._leitura(f"/api/historico-comparacoes/{evento_id}")
 
     def listar_unidades(self) -> Dict[str, Any]:
-        return self._leitura("/api/unidades")
+        """Todas as unidades com o id, para a IA conseguir editar qualquer uma."""
+        ok, dados = self._chamar("GET", "/api/unidades")
+        if not ok:
+            return {"erro": dados}
+        campos = ("id", "cidade", "endereco", "uf", "cep", "cnpj")
+        unidades = [{k: u.get(k, "") for k in campos} for u in (dados if isinstance(dados, list) else []) if isinstance(u, dict)]
+        return {"total": len(unidades), "unidades": unidades}
+
+    def exportar_planilha(self, tipo: str, data: str = "", destino: Optional[Path] = None) -> Dict[str, Any]:
+        """Baixa a planilha da rota oficial e salva em Downloads, sem sobrescrever arquivo existente."""
+        tipo = tipo.strip().lower()
+        if tipo not in EXPORTACOES:
+            return {"sucesso": False, "erro": f"Tipo inválido: '{tipo}'. Opções: {', '.join(EXPORTACOES)}."}
+        params: Dict[str, Any] = {}
+        if tipo == "historico":
+            # a rota exige o dia; sem pedido explícito, usa o da última comparação
+            data = data.strip() or str(self.consultar_ultima_comparacao().get("horario", ""))[:10]
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", data):
+                return {"sucesso": False, "erro": "Não há comparação no histórico para exportar."}
+            params["data"] = data
+        try:
+            with self._client(timeout=60.0) as c:
+                res = c.get(EXPORTACOES[tipo], params=params)
+        except httpx.ConnectError:
+            return {"sucesso": False, "erro": self._msg_offline()}
+        except httpx.TimeoutException:
+            return {"sucesso": False, "erro": "O Simpress demorou demais para gerar a planilha."}
+        except Exception as e:
+            return {"sucesso": False, "erro": f"Falha na comunicação com o Simpress: {e}"}
+        if res.status_code != 200:
+            return {"sucesso": False, "erro": self._erro_http(res)}
+        achado = re.search(r'filename="?([^";]+)"?', res.headers.get("content-disposition", ""))
+        nome = os.path.basename(achado.group(1).strip()) if achado else ""
+        if not nome.lower().endswith(".xlsx"):
+            nome = f"{tipo}.xlsx"
+        pasta = Path(destino or PASTA_DOWNLOADS)
+        pasta.mkdir(parents=True, exist_ok=True)
+        alvo, n = pasta / nome, 1
+        while alvo.exists():
+            alvo, n = pasta / f"{Path(nome).stem} ({n}).xlsx", n + 1
+        alvo.write_bytes(res.content)
+        return {"sucesso": True, "arquivo": alvo.name, "pasta": str(pasta)}
 
     def listar_transferencias(self) -> Dict[str, Any]:
         return self._leitura("/api/historico-transferencias")
@@ -381,6 +450,29 @@ class SimpressClient:
             "/api/equipamento/atualizar-usuario", {"serial": serial, "usuario": usuario},
             f"Usuário do serial {serial} atualizado.",
         )
+
+    def salvar_unidade(
+        self, cidade: str, endereco: str, cnpj: str, uf: str = "PR", cep: str = "", id: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Edita (com id) ou cria (sem id) uma unidade. Recusa id que não existe na lista atual."""
+        corpo: Dict[str, Any] = {
+            "cidade": cidade.strip(), "endereco": endereco.strip(), "cnpj": cnpj.strip(),
+            "uf": (uf or "PR").strip().upper(), "cep": (cep or "").strip(),
+        }
+        if not corpo["cidade"] or not corpo["endereco"] or not corpo["cnpj"]:
+            return {"sucesso": False, "erro": "Cidade, endereço e CNPJ são obrigatórios."}
+        if id not in (None, ""):
+            try:
+                corpo["id"] = int(id)
+            except (TypeError, ValueError):
+                return {"sucesso": False, "erro": f"Identificador de unidade inválido: {id}."}
+            atual = self.listar_unidades()
+            if "erro" in atual:
+                return {"sucesso": False, "erro": atual["erro"]}
+            if not any(str(u.get("id")) == str(corpo["id"]) for u in atual["unidades"]):
+                return {"sucesso": False, "erro": f"Não existe unidade com id {corpo['id']}. Nada foi alterado."}
+        feito = f"Unidade #{corpo['id']} ({corpo['cidade']}) atualizada." if "id" in corpo else f"Unidade {corpo['cidade']} criada."
+        return self._acao("/api/unidade/salvar", corpo, feito)
 
     def decidir_pendencia_usuario(self, pendencia_id: str, decisao: str) -> Dict[str, Any]:
         pendencia_id, decisao = str(pendencia_id).strip(), decisao.strip().lower()

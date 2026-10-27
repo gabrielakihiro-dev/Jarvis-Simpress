@@ -74,7 +74,10 @@ Suas responsabilidades:
    - 'sebrae': sincronização de chamados Sebrae (SoftExpert -> Excel).
 3. Se o usuário pedir para cancelar uma automação em andamento, chame `cancelar_automacao_chrome`.
 4. Para alterar apelido, usuário ou pendências, chame a ferramenta correspondente. O sistema mostra um cartão de confirmação ao usuário: não peça confirmação por texto e não diga que a alteração foi feita antes do resultado da ferramenta.
-5. Faça uma alteração por vez. Para abrir uma tela do Simpress, diga o nome da tela; a interface oferece o botão.
+5. Faça uma alteração por vez.
+5a. Para exportar planilhas, chame `exportar_planilha` ('equipamentos', 'chamados' ou 'historico'); o arquivo vai para a pasta Downloads. Informe só o nome do arquivo salvo.
+5b. Para importar ou atualizar planilhas: se o usuário quer que o Jarvis baixe e importe sozinho, use `executar_automacao_chrome` com 'inventarios'; se ele já tem os arquivos, chame `abrir_importacao`.
+5c. Para editar uma unidade, chame `listar_unidades` antes, pegue o `id` e repita em `salvar_unidade` os campos que não mudam. Sem `id` cria uma unidade nova: só faça isso se o usuário pedir para criar.
 6. Para qualquer dado, chame a ferramenta na mesma resposta. Nunca responda só "vou consultar".
 7. Apresente os dados de forma limpa, objetiva e fácil de ler (ou ouvir em áudio).
 
@@ -96,6 +99,8 @@ class Resposta:
     ferramentas: List[str] = field(default_factory=list)
     pendente: Optional[Dict[str, Any]] = None
     resultado_acao: Optional[Dict[str, Any]] = None
+    # (ferramenta, resultado real) para os cartões da tela; nunca volta à IA
+    dados: List[Tuple[str, Dict[str, Any]]] = field(default_factory=list)
 
 
 class LLMClient:
@@ -118,6 +123,7 @@ class LLMClient:
 
         self.mensagens: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._pendente: Optional[Dict[str, Any]] = None
+        self._dados: List[Tuple[str, Dict[str, Any]]] = []
 
     @staticmethod
     def _criar_cliente(api_key: str) -> OpenAI:
@@ -275,7 +281,9 @@ class LLMClient:
                     self._pendente = {"tool_call_id": tc_id, "nome": nome, "args": args, "descricao": descrever_acao(nome, args)}
                     continue
 
-                self.mensagens.append(self._msg_tool(tc_id, nome, self.executar_ferramenta(nome, args)))
+                resultado = self.executar_ferramenta(nome, args)
+                self._dados.append((nome, resultado))
+                self.mensagens.append(self._msg_tool(tc_id, nome, resultado))
 
             if self._pendente is not None:
                 p = self._pendente
@@ -299,7 +307,10 @@ class LLMClient:
 
         checkpoint = len(self.mensagens)
         self.mensagens.append({"role": "user", "content": self.mascara.ocultar_conhecidos(texto_usuario)})
-        return self._rodar(checkpoint, [], callback_status)
+        self._dados = []
+        resposta = self._rodar(checkpoint, [], callback_status)
+        resposta.dados = self._dados
+        return resposta
 
     def resolver_confirmacao(self, confirmado: bool, callback_status: Optional[Callable[[str], None]] = None) -> Resposta:
         """Executa (ou descarta) a alteração pendente e deixa o modelo concluir a resposta."""
@@ -315,6 +326,8 @@ class LLMClient:
             resultado = {"cancelado": True, "mensagem": "O usuário cancelou. Nada foi alterado."}
 
         self.mensagens.append(self._msg_tool(p["tool_call_id"], p["nome"], resultado))
+        self._dados = [(p["nome"], resultado)] if confirmado else []
         resposta = self._rodar(len(self.mensagens), [p["nome"]], callback_status)
         resposta.resultado_acao = resultado
+        resposta.dados = self._dados
         return resposta

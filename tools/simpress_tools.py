@@ -10,7 +10,7 @@ API do servidor Simpress.
 
 from typing import Any, Callable, Dict, List, Optional
 
-from simpress_client import DECISOES_VALIDAS, ROTINAS_VALIDAS, SimpressClient
+from simpress_client import DECISOES_VALIDAS, EXPORTACOES, ROTINAS_VALIDAS, SimpressClient
 
 
 def _tool(nome: str, descricao: str, propriedades: Optional[Dict[str, Any]] = None, obrigatorios: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -29,6 +29,7 @@ MUTADORAS = frozenset({
     "atualizar_apelido",
     "atualizar_usuario",
     "decidir_pendencia_usuario",
+    "salvar_unidade",
 })
 
 TOOLS_SCHEMA: List[Dict[str, Any]] = [
@@ -72,7 +73,20 @@ TOOLS_SCHEMA: List[Dict[str, Any]] = [
         "Detalhes de uma atualização do Histórico de Planilhas pelo identificador.",
         {"evento_id": {"type": "string", "description": "Identificador do evento do histórico."}}, ["evento_id"],
     ),
-    _tool("listar_unidades", "Unidades cadastradas no Simpress."),
+    _tool("listar_unidades", "Unidades cadastradas no Simpress, com id, cidade, endereço, UF, CEP e CNPJ."),
+    _tool(
+        "exportar_planilha",
+        "Gera a planilha oficial do Simpress e salva na pasta Downloads do usuário. 'equipamentos' usa o modelo de exportação; 'chamados' é o acompanhamento de chamados; 'historico' é o Histórico de Planilhas do dia (padrão: dia da última comparação).",
+        {
+            "tipo": {"type": "string", "enum": list(EXPORTACOES), "description": "Qual planilha exportar."},
+            "data": {"type": "string", "description": "Só para 'historico': dia no formato AAAA-MM-DD."},
+        },
+        ["tipo"],
+    ),
+    _tool(
+        "abrir_importacao",
+        "Abre na tela do Jarvis a janela para o usuário escolher as duas planilhas (Endpoint e Simpress) que já tem no computador e importá-las. Use quando ele quiser importar arquivos próprios; para baixar e importar automaticamente, use executar_automacao_chrome com 'inventarios'.",
+    ),
     _tool("listar_transferencias", "Histórico de transferências de equipamentos."),
     _tool("listar_pendencias_usuarios", "Pendências de usuários logados aguardando decisão (permitir, recusar, remover ou manter)."),
     # Ações que alteram dados (exigem confirmação do usuário)
@@ -93,6 +107,19 @@ TOOLS_SCHEMA: List[Dict[str, Any]] = [
         "Altera o usuário manual de um equipamento. O usuário confirma antes.",
         {"serial": _SERIAL, "usuario": {"type": "string", "description": "Nome do usuário."}},
         ["serial", "usuario"],
+    ),
+    _tool(
+        "salvar_unidade",
+        "Edita uma unidade existente (informe o id de listar_unidades) ou cria uma nova (sem id). Envie todos os campos, repetindo os que não mudam. O usuário confirma antes.",
+        {
+            "id": {"type": "integer", "description": "Id da unidade a editar (de listar_unidades). Omita só para criar."},
+            "cidade": {"type": "string"},
+            "endereco": {"type": "string"},
+            "uf": {"type": "string", "description": "Sigla com 2 letras (padrão PR)."},
+            "cep": {"type": "string"},
+            "cnpj": {"type": "string"},
+        },
+        ["cidade", "endereco", "cnpj"],
     ),
     _tool(
         "decidir_pendencia_usuario",
@@ -125,6 +152,14 @@ def descrever_acao(nome: str, args: Dict[str, Any]) -> str:
         return f"Alterar o usuário do serial {serial} para '{args.get('usuario', '')}'."
     if nome == "decidir_pendencia_usuario":
         return f"Registrar a decisão '{args.get('decisao', '')}' na pendência {args.get('pendencia_id', '')}."
+    if nome == "salvar_unidade":
+        campos = (
+            f"cidade {args.get('cidade', '')}, endereço {args.get('endereco', '')}, "
+            f"UF {args.get('uf') or 'PR'}, CEP {args.get('cep', '')}, CNPJ {args.get('cnpj', '')}"
+        )
+        if args.get("id") not in (None, ""):
+            return f"Editar a unidade #{args.get('id')}: {campos}."
+        return f"Criar nova unidade: {campos}."
     return f"Executar {nome}."
 
 
@@ -153,6 +188,12 @@ class SimpressToolbox:
             "resumo_sebrae": lambda a: c.resumo_sebrae(),
             "consultar_historico_comparacao": lambda a: c.consultar_historico_comparacao(str(a.get("evento_id", ""))),
             "listar_unidades": lambda a: c.listar_unidades(),
+            "exportar_planilha": lambda a: c.exportar_planilha(str(a.get("tipo", "")), str(a.get("data", "") or "")),
+            "abrir_importacao": lambda a: {"abrir_importacao": True, "mensagem": "Janela de importação aberta na tela do usuário."},
+            "salvar_unidade": lambda a: c.salvar_unidade(
+                cidade=str(a.get("cidade", "")), endereco=str(a.get("endereco", "")), cnpj=str(a.get("cnpj", "")),
+                uf=str(a.get("uf", "") or "PR"), cep=str(a.get("cep", "") or ""), id=a.get("id"),
+            ),
             "listar_transferencias": lambda a: c.listar_transferencias(),
             "listar_pendencias_usuarios": lambda a: c.listar_pendencias_usuarios(),
             "executar_automacao_chrome": lambda a: c.executar_automacao(str(a.get("rotina", ""))),

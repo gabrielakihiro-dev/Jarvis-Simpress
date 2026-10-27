@@ -16,6 +16,7 @@ SUCCESS = "#3DDC97"
 WARNING = "#FFB547"
 ERROR = "#FF5C7A"
 ON_CYAN = "#06101C"          # texto sobre botão ciano
+BALAO_EU = "#1B3350"         # balão das mensagens do usuário
 
 SP = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24}
 RAIO = {"sm": 6, "md": 10}
@@ -40,6 +41,11 @@ PARES_CONTRASTE = [
     (BORDER_STRONG, SURFACE, 3.0, "contorno de campo"),
     (BORDER_STRONG, BG, 3.0, "contorno sobre fundo"),
     (CYAN, SURFACE, 3.0, "anel de foco"),
+    (TEXT, BALAO_EU, 4.5, "texto no balão do usuário"),
+    (TEXT_SECONDARY, BALAO_EU, 4.5, "nome no balão do usuário"),
+    (CYAN, SURFACE_ALT, 4.5, "cabeçalho de cartão de resposta"),
+    (SUCCESS, BG, 4.5, "exportação concluída na conversa"),
+    (ERROR, BG, 3.0, "anel do orbe ouvindo"),
 ]
 
 
@@ -76,7 +82,15 @@ QToolTip {{ background: {SURFACE_ALT}; color: {TEXT}; border: 1px solid {BORDER_
 
 QFrame#hud {{ background: {SURFACE}; border-bottom: 1px solid {BORDER}; }}
 QFrame#menu {{ background: {SURFACE}; border-right: 1px solid {BORDER}; }}
-QFrame#chat {{ background: {SURFACE}; border-left: 1px solid {BORDER}; }}
+QFrame#chat {{ background: {BG}; }}
+QFrame#status {{ background: {SURFACE}; border-right: 1px solid {BORDER}; }}
+QTextBrowser#conversa {{ font-size: 11pt; border: none; }}
+QLineEdit#entrada {{ font-size: 11pt; padding: 8px {SP['md']}px; }}
+QPushButton[papel="status"] {{ text-align: left; padding: {SP['sm']}px {SP['md']}px; background: {SURFACE_ALT}; }}
+QPushButton[papel="status"][nivel="aviso"] {{ border-left: 3px solid {WARNING}; }}
+QPushButton[papel="status"][nivel="erro"] {{ border-left: 3px solid {ERROR}; }}
+QPushButton[papel="status"][nivel="ok"] {{ border-left: 3px solid {SUCCESS}; }}
+QLabel#escutando {{ color: {SUCCESS}; }}
 QFrame#rodape {{ background: {SURFACE}; border-top: 1px solid {BORDER}; }}
 
 QLabel#logo {{ color: {CYAN}; font-size: 14pt; font-weight: 700; letter-spacing: 2px; }}
@@ -116,4 +130,5 @@ QLabel#aviso {{ color: {WARNING}; font-weight: 600; }}
 QScrollBar:vertical {{ background: {BG}; width: 10px; }}
 QScrollBar::handle:vertical {{ background: {BORDER_STRONG}; border-radius: 5px; min-height: 24px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
 """
