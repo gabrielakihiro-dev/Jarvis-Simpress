@@ -14,7 +14,7 @@ from ui import theme
 
 ROTULOS = {"ocioso": "Clique para falar", "pensando": "Pensando…",
            "falando": "Falando…", "ouvindo": "Ouvindo…",
-           "dormindo": "Dormindo: bata duas palmas ou diga “Jarvis”",
+           "dormindo": "Dormindo: diga “Hey Jarvis”",
            "mudo": "Microfone mudo (Ctrl+M para ativar)"}
 
 DIST = 3.2           # distância da câmera em raios da esfera: menor = perspectiva mais forte
@@ -116,7 +116,7 @@ class Orbe(QWidget):
         self.update()
 
     def escuta(self, ligada: bool) -> None:
-        ROTULOS["ocioso"] = "Em espera: bata duas palmas ou diga “Jarvis”" if ligada else "Clique para falar"
+        ROTULOS["ocioso"] = "Em espera: diga “Hey Jarvis”" if ligada else "Clique para falar"
         self.definir(self.estado)
 
     def definir_mudo(self, mudo: bool) -> None:

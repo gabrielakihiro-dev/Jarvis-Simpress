@@ -574,7 +574,7 @@ class ChatPanel(QFrame):
         self.escuta.pausar("fala", False)
 
     def _acordou(self, motivo: str) -> None:
-        self._rodape("Ouvi duas palmas. Pode falar." if motivo == "palmas" else "Chamou? Pode falar.")
+        self._rodape("Chamou? Pode falar.")
         if self.orbe.estado == "dormindo":
             self.orbe.definir("ocioso")
 

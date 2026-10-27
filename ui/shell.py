@@ -170,9 +170,9 @@ class JarvisShell(QMainWindow):
         lay.addStretch(1)
         self.lbl_escuta = QLabel("💤 em espera")
         self.lbl_escuta.setObjectName("escutando")
-        self.lbl_escuta.setToolTip("Em espera: o microfone só procura duas palmas ou “Jarvis”, neste computador. "
+        self.lbl_escuta.setToolTip("Em espera: o microfone só procura “Hey Jarvis”, neste computador. "
                                     "Nada é gravado nem enviado até você chamar.")
-        self.lbl_escuta.setAccessibleName("Em espera por palmas ou pela palavra Jarvis")
+        self.lbl_escuta.setAccessibleName("Em espera pela palavra Hey Jarvis")
         self.lbl_escuta.hide()
         lay.addWidget(self.lbl_escuta)
         self.btn_mudo = botao("", "fantasma")
@@ -196,7 +196,7 @@ class JarvisShell(QMainWindow):
         menu.addAction("Importar planilhas…", self.chat.importar)
         menu.addAction("Nova conversa", self.chat.limpar)
         menu.addSeparator()
-        self.acao_escuta = QAction("Escuta ativa (palmas e “Jarvis”)", menu)
+        self.acao_escuta = QAction("Escuta ativa (“Hey Jarvis”)", menu)
         self.acao_escuta.setCheckable(True)
         self.acao_escuta.toggled.connect(self._escuta)
         menu.addAction(self.acao_escuta)
@@ -247,7 +247,7 @@ class JarvisShell(QMainWindow):
         self.btn_mudo.blockSignals(False)
         self.btn_mudo.setText("🔇 Microfone mudo" if mudo else "🎙 Microfone ligado")
         self.btn_mudo.setAccessibleName(f"{'Microfone mudo' if mudo else 'Microfone ligado'}. Ctrl+M para alternar.")
-        self.btn_mudo.setToolTip("Microfone mudo: o Jarvis não ouve palmas, nome nem fala. Clique ou Ctrl+M para ativar."
+        self.btn_mudo.setToolTip("Microfone mudo: o Jarvis não ouve nome nem fala. Clique ou Ctrl+M para ativar."
                                  if mudo else "Clique ou Ctrl+M para mutar o microfone.")
 
     def _aplicar_status(self, e: dict) -> None:

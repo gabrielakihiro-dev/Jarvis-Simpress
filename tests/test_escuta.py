@@ -1,50 +1,11 @@
 from array import array
 
-from ui.escuta import Conversa, CorteSilencio, DetectorPalmas, para_mono_16k, pico
-
-QUIETO, ALTO = 0.01, 0.8
+from ui.escuta import Conversa, CorteSilencio, para_mono_16k, pico
 
 
 def sequencia(*partes):
     """partes: (pico, ms). Devolve os picos de cada bloco de 50 ms."""
     return [p for p, ms in partes for _ in range(ms // 50)]
-
-
-def disparos(picos):
-    d = DetectorPalmas(limiar=0.25)
-    return sum(d.alimentar(p) for p in picos)
-
-
-CALMA = (QUIETO, 2500)  # passa a calibração
-
-
-def test_duas_palmas_disparam_uma_vez():
-    assert disparos(sequencia(CALMA, (ALTO, 50), (QUIETO, 300), (ALTO, 50), (QUIETO, 1500))) == 1
-
-
-def test_uma_palma_nao_dispara():
-    assert disparos(sequencia(CALMA, (ALTO, 50), (QUIETO, 2000))) == 0
-
-
-def test_tres_palmas_nao_disparam():
-    assert disparos(sequencia(CALMA, (ALTO, 50), (QUIETO, 250), (ALTO, 50), (QUIETO, 250), (ALTO, 50), (QUIETO, 1500))) == 0
-
-
-def test_ruido_continuo_nao_dispara():
-    assert disparos(sequencia(CALMA, (ALTO, 1000), (QUIETO, 300), (ALTO, 1000), (QUIETO, 1500))) == 0
-
-
-def test_palmas_muito_separadas_nao_disparam():
-    assert disparos(sequencia(CALMA, (ALTO, 50), (QUIETO, 1000), (ALTO, 50), (QUIETO, 1500))) == 0
-
-
-def test_palmas_durante_calibracao_nao_disparam():
-    assert disparos(sequencia((QUIETO, 300), (ALTO, 50), (QUIETO, 300), (ALTO, 50), (QUIETO, 800))) == 0
-
-
-def test_fala_alta_nao_dispara():
-    # sílabas de 150 ms são longas demais para palma
-    assert disparos(sequencia(CALMA, (ALTO, 150), (QUIETO, 200), (ALTO, 150), (QUIETO, 1500))) == 0
 
 
 def test_corte_para_depois_do_silencio():
@@ -76,45 +37,9 @@ def test_conversao_48k_estereo_e_float():
     assert abs(pico(mono.tobytes()) - 1000 / 32768) < 1e-9
 
 
-def test_palmas_em_microfone_com_ruido_alto():
-    # ruído de fundo 0.2 (ganho alto): sem teto o limiar viraria 1.2 e nenhuma palma passaria
-    assert disparos(sequencia((0.2, 2500), (0.95, 50), (0.2, 300), (0.95, 50), (0.2, 1500))) == 1
-
-
 def test_voz_em_sala_barulhenta_conta_como_fala():
     c = CorteSilencio(ruido=0.3)
     assert c.minimo == 0.3
-
-
-# --- captura real do microfone AMD (data/palmas_debug.log): palmas com cauda de 150-250 ms ---
-PALMAS_REAIS = [0.151, 0.605, 0.555, 0.329, 0.167, 0.095, 0.379, 0.333, 0.521, 0.389, 0.298, 0.096]
-
-
-def test_palmas_reais_com_cauda_longa_disparam():
-    assert disparos(sequencia(CALMA) + PALMAS_REAIS + sequencia((QUIETO, 1500))) == 1
-
-
-def test_palmas_reais_com_limiar_padrao_disparam():
-    d = DetectorPalmas()
-    assert sum(d.alimentar(p) for p in sequencia(CALMA) + PALMAS_REAIS + sequencia((QUIETO, 1500))) == 1
-
-
-def test_palma_com_cauda_nao_conta_duas_vezes():
-    # uma palma só, com cauda e repique de 250 ms
-    assert disparos(sequencia(CALMA) + [0.6, 0.5, 0.3, 0.45, 0.3] + sequencia((QUIETO, 2000))) == 0
-
-
-def test_voz_plana_longa_nao_dispara():
-    # 250 ms sustentados, sem decair: fala, não palma
-    assert disparos(sequencia(CALMA) + [0.5] * 5 + sequencia((QUIETO, 150)) + [0.5] * 5 + sequencia((QUIETO, 1500))) == 0
-
-
-def test_dispara_em_menos_de_meio_segundo_depois_da_segunda_palma():
-    d = DetectorPalmas(limiar=0.25)
-    for p in sequencia(CALMA, (ALTO, 50), (QUIETO, 300), (ALTO, 50)):
-        d.alimentar(p)
-    espera = next(i for i in range(1, 20) if d.alimentar(QUIETO)) * 50
-    assert espera <= 450
 
 
 # --- conversa contínua: dorme depois de 2 min sem você falar ---
@@ -192,7 +117,7 @@ APP = QCoreApplication.instance() or QCoreApplication([])  # viva no módulo: se
 def escuta():
     e = Escuta()
     e.ligada = True
-    e._detector, e._vosk = Registro(), Registro()
+    e._vosk = Registro()
     return e
 
 
@@ -204,13 +129,12 @@ def test_mudo_descarta_o_bloco_e_emite_nivel_zero(escuta):
     niveis = []
     escuta.nivel.connect(niveis.append)
     escuta._bloco(bloco_alto())
-    assert niveis[-1] > 0 and escuta._detector.chamadas  # sem mudo o bloco chega ao detector
-    escuta._detector.chamadas.clear()
+    assert niveis[-1] > 0 and escuta._vosk.chamadas  # sem mudo o bloco chega ao Vosk
     escuta._vosk.chamadas.clear()
     escuta.definir_mudo(True)
     escuta._bloco(bloco_alto())
     assert niveis[-1] == 0.0
-    assert escuta._detector.chamadas == [] and escuta._vosk.chamadas == []
+    assert escuta._vosk.chamadas == []
     assert escuta.gravar() is False and not escuta.esta_gravando
 
 

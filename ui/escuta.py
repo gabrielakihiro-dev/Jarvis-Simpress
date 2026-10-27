@@ -1,7 +1,7 @@
-"""Escuta ativa: chama o Jarvis por duas palmas ou por "Hey Jarvis", e grava a pergunta.
+"""Escuta ativa: chama o Jarvis por "Hey Jarvis", e grava a pergunta.
 
 Um único microfone (QAudioSource) alimenta tudo, em blocos de 50 ms, 16 kHz mono:
-- ouvindo: o detector de palmas, o openwakeword ("Hey Jarvis") e o Vosk ("cancelar"; o nome, se o
+- ouvindo: o openwakeword ("Hey Jarvis") e o Vosk ("cancelar"; o nome, se o
   openwakeword faltar) rodam offline, só neste computador;
 - gravando: o áudio vai para um buffer que para sozinho no silêncio e vira WAV.
 Só o áudio gravado depois de chamar o Jarvis sai do computador (para a transcrição).
@@ -9,7 +9,6 @@ Só o áudio gravado depois de chamar o Jarvis sai do computador (para a transcr
 
 import io
 import json
-import os
 import queue
 import time
 import wave
@@ -32,21 +31,6 @@ PALAVRAS = {"jarbas", "cancelar"}
 # iscas: sem elas, "cancelei"/"cancelada" da própria fala do Jarvis viram "cancelar"
 GRAMATICA = ["jarbas", "cancelar", "cancelei", "cancelada", "cancelado", "cancelou", "cancelamento", "[unk]"]
 MICROFONE_MUDO = 0.001  # pico máximo de uma gravação inteira abaixo disso: microfone mudo, não pessoa calada
-DEPURAR = os.environ.get("JARVIS_PALMAS_DEBUG") == "1"
-LOG_PALMAS = Path(__file__).resolve().parent.parent / "data" / "palmas_debug.log"  # data/ fica fora do Git
-
-
-def _depurar(msg: str) -> None:
-    """JARVIS_PALMAS_DEBUG=1: anota em data/palmas_debug.log o que o detector viu (só picos, sem áudio)."""
-    if not DEPURAR:
-        return
-    try:
-        LOG_PALMAS.parent.mkdir(exist_ok=True)
-        with LOG_PALMAS.open("a", encoding="utf-8") as f:
-            f.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
-    except OSError:
-        pass
-
 
 # --- lógica pura (testada sem microfone) -----------------------------------
 
@@ -83,78 +67,6 @@ def wav(pcm: bytes) -> bytes:
         w.setframerate(TAXA)
         w.writeframes(pcm)
     return bio.getvalue()
-
-
-class DetectorPalmas:
-    """Recebe o pico de cada bloco de 50 ms e diz quando ouviu exatamente duas palmas.
-
-    Palma: sequência de até 6 blocos acima do limiar (a cauda de eco/AGC do microfone dura 150-250 ms)
-    que começa forte e decai, depois de silêncio. Voz sustentada ou plana não decai: não conta.
-    Entre as duas: 120 a 700 ms. Dispara 400 ms depois da 2ª (uma 3ª palma cancela).
-    """
-
-    CALIBRACAO_MS = 2000
-    MAX_BLOCOS = 6          # acima de 300 ms é voz ou barulho, não palma
-    ESPERA_TERCEIRA_MS = 400
-
-    def __init__(self, limiar: Optional[float] = None):
-        self.limiar = limiar if limiar is not None else float(os.environ.get("JARVIS_PALMAS_LIMIAR") or 0.2)
-        self.ruido = 0.0
-        self.t = 0
-        self._alto = 0
-        self._quieto_ms = 0
-        self._quieto_antes = 0
-        self._inicio = 0
-        self._primeiro = self._pico = self._ultimo = 0.0
-        self._palmas: list = []
-
-    def limpar(self) -> None:
-        self._palmas.clear()
-        self._alto = self._quieto_ms = 0
-
-    def alimentar(self, p: float) -> bool:
-        self.t += BLOCO_MS
-        efetivo = max(self.limiar, min(self.ruido * 6, 0.8))  # teto: microfone com ganho alto não pode tornar a palma impossível
-        if DEPURAR and (p >= 0.02 or self._alto):
-            _depurar(f"bloco t={self.t} pico={p:.3f} limiar={efetivo:.3f} ruido={self.ruido:.3f} "
-                     f"{'ALTO' if p >= efetivo else 'baixo'} seguidos={self._alto + (p >= efetivo)}")
-        if p >= efetivo:
-            if self._alto == 0:
-                self._quieto_antes, self._inicio = self._quieto_ms, self.t
-                self._primeiro = self._pico = p
-            self._alto += 1
-            self._quieto_ms = 0
-            self._pico, self._ultimo = max(self._pico, p), p
-            if self._alto == self.MAX_BLOCOS + 1:  # som longo (voz, batida de porta): não é palma
-                _depurar(f"descartado: som longo (mais de {self.MAX_BLOCOS} blocos altos)")
-                self._palmas.clear()
-            return False
-        self.ruido = p if self.ruido == 0 else self.ruido * 0.95 + p * 0.05
-        blocos, self._alto = self._alto, 0
-        self._quieto_ms += BLOCO_MS
-        if 1 <= blocos <= self.MAX_BLOCOS:
-            self._palma(blocos)
-        espera = self.ESPERA_TERCEIRA_MS if len(self._palmas) >= 2 else 700
-        if self._palmas and self.t - self._palmas[-1] > espera:
-            duas = len(self._palmas) == 2 and self.t > self.CALIBRACAO_MS
-            _depurar(f"fim da janela: {len(self._palmas)} palma(s), calibrando={self.t <= self.CALIBRACAO_MS} -> {'DISPARA' if duas else 'nada'}")
-            self._palmas.clear()
-            return duas
-        return False
-
-    def _palma(self, blocos: int) -> None:
-        if blocos > 1 and not (self._primeiro >= 0.6 * self._pico and self._ultimo <= 0.75 * self._pico):
-            _depurar(f"rejeitado: não decai (1º={self._primeiro:.2f} pico={self._pico:.2f} último={self._ultimo:.2f})")
-            return
-        if self._palmas and self._inicio - self._palmas[-1] < 120:
-            _depurar("ignorado: eco da mesma palma")
-            return
-        minimo = BLOCO_MS if self._palmas else 2 * BLOCO_MS
-        if self._quieto_antes < minimo:
-            _depurar(f"rejeitada: só {self._quieto_antes} ms de silêncio antes (precisa {minimo})")
-            return
-        self._palmas.append(self._inicio)
-        _depurar(f"palma {len(self._palmas)} aceita ({blocos} blocos, pico {self._pico:.2f})")
 
 
 class CorteSilencio:
@@ -253,12 +165,12 @@ class VoskWorker(QThread):
 
 
 class Escuta(QObject):
-    acordou = pyqtSignal(str)     # "palmas" | "nome"
+    acordou = pyqtSignal(str)     # "nome"
     gravando = pyqtSignal(bool)
     gravou = pyqtSignal(bytes)    # WAV 16 kHz mono
     aviso = pyqtSignal(str)
     cancelou = pyqtSignal()       # disse “cancelar” enquanto o Jarvis pensava, falava ou pedia confirmação
-    dormiu = pyqtSignal()         # 2 min sem você falar: volta a esperar por palmas ou pelo nome
+    dormiu = pyqtSignal()         # 2 min sem você falar: volta a esperar pelo nome
     nivel = pyqtSignal(float)     # 0..1 suavizado, a cada bloco de 50 ms (para o orbe)
     mudou_mudo = pyqtSignal(bool)
 
@@ -280,11 +192,10 @@ class Escuta(QObject):
         self._corte: Optional[CorteSilencio] = None
         self._pausas: set = set()
         self._ignorar = 0
-        self._detector = DetectorPalmas()
+        self._ruido = 0.0  # média dos blocos calmos: o corte de silêncio não confunde barulho de fundo com voz
         self._vosk: Optional[VoskWorker] = None
         self._wake: Optional[PalavraChaveWorker] = None
         self._wake_ok = False  # "Hey Jarvis" carregou: o nome pelo Vosk (plano B) fica de fora para não chamar duas vezes
-        self._dbg_pico, self._dbg_n = 0.0, 0
         self._nivel = 0.0
         self.mudo = False  # só em memória: ao abrir o Jarvis o microfone volta ligado
 
@@ -300,12 +211,11 @@ class Escuta(QObject):
             if not self._gravando:
                 self._fechar()
             return True
-        self._detector = DetectorPalmas()
         self._sono.start()
         if self._vosk is None:
             self._vosk = VoskWorker(self)
             self._vosk.ouviu.connect(self._ouviu)
-            self._vosk.falhou.connect(lambda m: self.aviso.emit(f"Chamar pelo nome desligado: {m}. Palmas e clique no orbe continuam."))
+            self._vosk.falhou.connect(lambda m: self.aviso.emit(f"Chamar pelo nome desligado: {m}. O clique no orbe continua."))
             self._vosk.start()
         if self._wake is None:
             self._wake = PalavraChaveWorker(self)
@@ -333,7 +243,7 @@ class Escuta(QObject):
     def gravar(self, silenciosa: bool = False) -> bool:
         if self._gravando:
             return True
-        if self.mudo:  # cobre clique, palmas/nome ainda na fila do Vosk e a retomada da conversa
+        if self.mudo:  # cobre clique, nome ainda na fila do Vosk e a retomada da conversa
             return False
         if not self._abrir():
             return False
@@ -341,14 +251,14 @@ class Escuta(QObject):
         if self.ligada and not silenciosa:
             self.conversa.acordar()
         self._gravando, self._buf = True, bytearray()
-        self._corte = CorteSilencio(self._detector.ruido)
+        self._corte = CorteSilencio(self._ruido)
         if not silenciosa:
             QApplication.beep()
         self.gravando.emit(True)
         return True
 
     def definir_mudo(self, mudo: bool) -> None:
-        """Mudo descarta o áudio: sem palmas, nome, gravação nem nível. Desmutar volta à espera, sem acordar."""
+        """Mudo descarta o áudio: sem nome, gravação nem nível. Desmutar volta à espera, sem acordar."""
         if mudo == self.mudo:
             return
         self.mudo = mudo
@@ -402,7 +312,6 @@ class Escuta(QObject):
 
     def _esfriar(self) -> None:
         self._ignorar = 500 // BLOCO_MS  # bipe e fim da fala não podem acordar o Jarvis
-        self._detector.limpar()
         if self._vosk is not None:
             self._vosk.zerar()
         if self._wake is not None:
@@ -453,7 +362,6 @@ class Escuta(QObject):
             self.aviso.emit("O microfone usa um formato de áudio que o Jarvis ainda não lê.")
             return False
         self._fmt, self._cru, self._resto = fmt, b"", b""
-        _depurar(f"microfone: {entrada.description()} {fmt.sampleRate()} Hz, {fmt.channelCount()} canal(is), {fmt.sampleFormat().name}")
         self._fonte = QAudioSource(entrada, fmt, self)
         self._dev = self._fonte.start()
         self._dev.readyRead.connect(self._ler)
@@ -486,12 +394,6 @@ class Escuta(QObject):
         p = pico(bloco)
         self._nivel = suavizar_nivel(self._nivel, p)
         self.nivel.emit(self._nivel)
-        if DEPURAR:  # 1 linha por segundo: o que o microfone entrega e em que estado a escuta está
-            self._dbg_pico, self._dbg_n = max(self._dbg_pico, p), self._dbg_n + 1
-            if self._dbg_n >= 20:
-                _depurar(f"1s: pico_max={self._dbg_pico:.4f} ligada={self.ligada} gravando={self._gravando} "
-                         f"pausas={sorted(self._pausas)} esfriando={self._ignorar}")
-                self._dbg_pico, self._dbg_n = 0.0, 0
         if self._gravando:
             self._buf += bloco
             fim = self._corte.alimentar(p)
@@ -510,21 +412,16 @@ class Escuta(QObject):
             return
         if not self.ligada:
             return
-        if self._pausas:  # pausada, só “cancelar” vale: palmas e nome ficam de fora
-            if DEPURAR and p >= 0.1:
-                _depurar(f"som ignorado: escuta pausada por {sorted(self._pausas)}")
+        if self._pausas:  # pausada, só “cancelar” vale: o nome fica de fora
             if self._vosk is not None:
                 self._vosk.alimentar(bloco)
             return
         if self._ignorar:
-            if DEPURAR and p >= 0.1:
-                _depurar("som ignorado: esfriando depois de bipe/fala")
             self._ignorar -= 1
             return
-        if self._detector.alimentar(p):
-            self._acordar("palmas")
-        else:
-            if self._wake is not None and self._wake_ok:
-                self._wake.alimentar(bloco)
-            if self._vosk is not None:
-                self._vosk.alimentar(bloco)
+        if p < 0.2:
+            self._ruido = p if self._ruido == 0 else self._ruido * 0.95 + p * 0.05
+        if self._wake is not None and self._wake_ok:
+            self._wake.alimentar(bloco)
+        if self._vosk is not None:
+            self._vosk.alimentar(bloco)
