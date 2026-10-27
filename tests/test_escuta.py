@@ -49,7 +49,8 @@ def test_fala_alta_nao_dispara():
 
 def test_corte_para_depois_do_silencio():
     c = CorteSilencio()
-    fins = [c.alimentar(p) for p in sequencia((0.0, 400), (0.3, 1000), (0.0, 1200))]
+    # pausa de 1,5 s no meio da frase não corta; 2 s de silêncio no fim cortam
+    fins = [c.alimentar(p) for p in sequencia((0.0, 400), (0.3, 1000), (0.0, 1500), (0.3, 500), (0.0, 2000))]
     assert fins[-1] == "fim" and fins.count("fim") == 1 and fins[-2] is None
 
 

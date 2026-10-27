@@ -10,7 +10,7 @@ Assistente desktop (PyQt6) com visual HUD escuro/ciano: um orbe, um chat em dest
 
 ## A janela
 
-- **Topo:** Simpress online/offline e porta, `👂 escutando` (quando a escuta ativa está ligada), modelo de IA, voz 🔊/🔇 e o menu ⚙ (modelo, Abrir Simpress no navegador, Importar planilhas…, Nova conversa, Escuta ativa).
+- **Topo:** Simpress online/offline e porta, `💤 em espera` (escuta ativa ligada: microfone só procura palmas e “Jarvis”), modelo de IA, voz 🔊/🔇 e o menu ⚙ (modelo, Abrir Simpress no navegador, Importar planilhas…, Nova conversa, Escuta ativa).
 - **Esquerda:** cartões Equipamentos, Chamados abertos, Automação e Pendências. Atualizam a cada 10 s; clicar pergunta ao Jarvis.
 - **Centro:** orbe (ocioso, pensando, falando, ouvindo — sempre com texto, não só cor) e a conversa em balões. Listas viram tabelas de até 10 linhas; depois de cada resposta aparecem até 3 sugestões de próxima pergunta.
 - **Avisos:** chamados novos, rotina de automação terminada e queda/volta do Simpress aparecem no chat (e são falados com a voz ligada). Não passam pela IA.
@@ -21,7 +21,7 @@ Animações de 150–300 ms; desligue com `JARVIS_REDUZIR_MOVIMENTO=1`.
 
 ## Chamar o Jarvis
 
-Clique no orbe (ou 🎤), bata **duas palmas** ou diga **“Jarvis”**. Toca um bipe; fale e ele para sozinho depois de 1,2 s de silêncio (máximo 20 s).
+Clique no orbe (ou 🎤), bata **duas palmas** ou diga **“Jarvis”**. Toca um bipe; fale e ele para sozinho depois de 2 s de silêncio (máximo 20 s).
 
 Palmas e “Jarvis” exigem a **Escuta ativa** (⚙ › Escuta ativa; fica salva como `JARVIS_ESCUTA=1` no `.env`). A palavra é reconhecida pelo Vosk com o modelo `modelos_voz/vosk-model-small-pt-0.3` (baixar de https://alphacephei.com/vosk/models e descompactar ali; a pasta fica fora do Git). Sem o modelo, palmas e clique continuam funcionando. Sensibilidade das palmas: `JARVIS_PALMAS_LIMIAR` (padrão 0.25). A escuta pausa enquanto o Jarvis fala, grava, espera a IA ou mostra um cartão de confirmação.
 

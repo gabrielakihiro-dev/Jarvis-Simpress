@@ -34,7 +34,7 @@ class Orbe(QWidget):
         self.update()
 
     def escuta(self, ligada: bool) -> None:
-        ROTULOS["ocioso"] = "Clique, bata duas palmas ou diga “Jarvis”" if ligada else "Clique para falar"
+        ROTULOS["ocioso"] = "Em espera: bata duas palmas ou diga “Jarvis”" if ligada else "Clique para falar"
         self.definir(self.estado)
 
     def definir(self, estado: str) -> None:
