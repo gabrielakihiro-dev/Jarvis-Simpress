@@ -1,20 +1,29 @@
-"""Componentes pequenos do HUD: indicador de status, chip e cartão de confirmação."""
+"""Componentes pequenos do HUD: indicador de status, chip, medidores e cartão de confirmação."""
 
 import html
 import re
 
-from PyQt6.QtCore import QPropertyAnimation, Qt, pyqtSignal
+from PyQt6.QtCore import QPropertyAnimation, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
+    QProgressBar,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 from ui import theme
+
+try:
+    import psutil
+except ImportError:  # sem psutil o medidor só não aparece
+    psutil = None
+
+MEDIDOR_DISPONIVEL = psutil is not None
 
 _COR_NIVEL = {"ok": theme.SUCCESS, "aviso": theme.WARNING, "erro": theme.ERROR, "neutro": theme.TEXT_SECONDARY}
 _ICONE_NIVEL = {"ok": "●", "aviso": "▲", "erro": "✕", "neutro": "○"}
@@ -36,6 +45,61 @@ class IndicadorStatus(QLabel):
                 f"<b>{html.escape(valor)}</b>"
         self.setText(texto)
         self.setAccessibleName(f"{self._rotulo}: {valor}")
+
+
+def texto_medidor(nome: str, pct: float) -> str:
+    return f"{nome} {round(max(0.0, min(100.0, pct)))}%"
+
+
+class MedidorSistema(QWidget):
+    """CPU e RAM discretos no topo, a cada 2 s; pausa com a janela oculta ou minimizada."""
+
+    NOMES = {"CPU": "processador", "RAM": "memória"}
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(theme.SP["md"])
+        self._itens = {}
+        for nome in self.NOMES:
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            rotulo = QLabel(texto_medidor(nome, 0))
+            rotulo.setObjectName("medidor")
+            barra = QProgressBar()
+            barra.setObjectName("medidor")
+            barra.setTextVisible(False)
+            barra.setFixedWidth(56)
+            col.addWidget(rotulo)
+            col.addWidget(barra)
+            lay.addLayout(col)
+            self._itens[nome] = (rotulo, barra)
+        self._timer = QTimer(self)
+        self._timer.setInterval(2000)
+        self._timer.timeout.connect(self._atualizar)
+        psutil.cpu_percent(None)  # a 1ª leitura sempre volta 0: serve só de marco
+
+    def _atualizar(self) -> None:
+        if not self.isVisible() or self.window().isMinimized():
+            return
+        valores = {"CPU": psutil.cpu_percent(None), "RAM": psutil.virtual_memory().percent}
+        for nome, (rotulo, barra) in self._itens.items():
+            texto = texto_medidor(nome, valores[nome])
+            rotulo.setText(texto)
+            barra.setValue(round(valores[nome]))
+            acessivel = f"Uso de {self.NOMES[nome]}: {texto.split()[-1]}"
+            rotulo.setAccessibleName(acessivel)
+            barra.setAccessibleName(acessivel)
+
+    def showEvent(self, ev) -> None:
+        super().showEvent(ev)
+        self._timer.start()
+        self._atualizar()
+
+    def hideEvent(self, ev) -> None:
+        super().hideEvent(ev)
+        self._timer.stop()
 
 
 def botao(texto: str, papel: str = "", dica: str = "", nome: str = "") -> QPushButton:

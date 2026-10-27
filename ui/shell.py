@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dotenv import set_key
 from PyQt6.QtCore import QThread, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction, QDesktopServices
+from PyQt6.QtGui import QAction, QDesktopServices, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QBoxLayout,
     QFrame,
@@ -23,7 +23,7 @@ from llm_client import LLMClient
 from simpress_client import SimpressClient
 from ui import theme
 from ui.chat_panel import ChatPanel
-from ui.widgets import IndicadorStatus, botao
+from ui.widgets import MEDIDOR_DISPONIVEL, IndicadorStatus, MedidorSistema, botao
 
 LARGURA_COMPACTA = 1100
 INTERVALO_STATUS_S = 10
@@ -164,6 +164,9 @@ class JarvisShell(QMainWindow):
         lay.addWidget(logo)
         self.ind_servidor = IndicadorStatus("Simpress")
         lay.addWidget(self.ind_servidor)
+        if MEDIDOR_DISPONIVEL:
+            self.medidor = MedidorSistema()
+            lay.addWidget(self.medidor)
         lay.addStretch(1)
         self.lbl_escuta = QLabel("💤 em espera")
         self.lbl_escuta.setObjectName("escutando")
@@ -172,6 +175,14 @@ class JarvisShell(QMainWindow):
         self.lbl_escuta.setAccessibleName("Em espera por palmas ou pela palavra Jarvis")
         self.lbl_escuta.hide()
         lay.addWidget(self.lbl_escuta)
+        self.btn_mudo = botao("", "fantasma")
+        self.btn_mudo.setObjectName("mudo")
+        self.btn_mudo.setCheckable(True)
+        self.btn_mudo.toggled.connect(self.chat.escuta.definir_mudo)
+        self.chat.escuta.mudou_mudo.connect(self._mostrar_mudo)
+        self._mostrar_mudo(False)
+        QShortcut(QKeySequence("Ctrl+M"), self, activated=self.btn_mudo.toggle)
+        lay.addWidget(self.btn_mudo)
         self.ind_ia = IndicadorStatus("IA")
         lay.addWidget(self.ind_ia)
         lay.addWidget(self.chat.btn_voz)
@@ -229,6 +240,15 @@ class JarvisShell(QMainWindow):
             set_key(str(ARQUIVO_ENV), "JARVIS_ESCUTA", "1" if ok else "0")
         except OSError:
             pass  # sem .env gravável: só não lembra na próxima abertura
+
+    def _mostrar_mudo(self, mudo: bool) -> None:
+        self.btn_mudo.blockSignals(True)
+        self.btn_mudo.setChecked(mudo)
+        self.btn_mudo.blockSignals(False)
+        self.btn_mudo.setText("🔇 Microfone mudo" if mudo else "🎙 Microfone ligado")
+        self.btn_mudo.setAccessibleName(f"{'Microfone mudo' if mudo else 'Microfone ligado'}. Ctrl+M para alternar.")
+        self.btn_mudo.setToolTip("Microfone mudo: o Jarvis não ouve palmas, nome nem fala. Clique ou Ctrl+M para ativar."
+                                 if mudo else "Clique ou Ctrl+M para mutar o microfone.")
 
     def _aplicar_status(self, e: dict) -> None:
         for texto in avisos(self._ultimo, e):

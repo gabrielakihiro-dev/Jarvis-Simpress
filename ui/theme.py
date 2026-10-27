@@ -2,21 +2,23 @@
 
 import os
 
-BG = "#0B1320"
-SURFACE = "#111C2E"
-SURFACE_ALT = "#16253B"
-BORDER = "#1F3550"          # divisor decorativo
-BORDER_STRONG = "#5B7CA3"   # contorno de campos e botões (≥ 3:1)
-CYAN = "#40CFFF"
-CYAN_HOVER = "#7BDCFF"
-CYAN_PRESSED = "#2BA8D6"
-TEXT = "#E6F1FF"
-TEXT_SECONDARY = "#9FB3C8"
-SUCCESS = "#3DDC97"
-WARNING = "#FFB547"
-ERROR = "#FF5C7A"
-ON_CYAN = "#06101C"          # texto sobre botão ciano
-BALAO_EU = "#1B3350"         # balão das mensagens do usuário
+# HUD escuro: fundo quase preto azulado, ciano primário e laranja de destaque
+BG = "#05090F"
+SURFACE = "#0A121E"
+SURFACE_ALT = "#0F1A2B"
+BORDER = "#1A2B42"          # divisor decorativo e trilho dos medidores
+BORDER_STRONG = "#527594"   # contorno de campos e botões (≥ 3:1)
+CYAN = "#2EE3FF"
+CYAN_HOVER = "#7DEEFF"
+CYAN_PRESSED = "#1FC2DE"
+TEXT = "#E2F3FF"
+TEXT_SECONDARY = "#8EA8C0"
+SUCCESS = "#3DE3A0"
+WARNING = "#FFC857"
+ERROR = "#FF6B81"
+LARANJA = "#FF9440"          # destaque: orbe ouvindo
+ON_CYAN = "#02121A"          # texto sobre botão ciano
+BALAO_EU = "#132842"         # balão das mensagens do usuário
 
 SP = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24}
 RAIO = {"sm": 6, "md": 10}
@@ -45,7 +47,13 @@ PARES_CONTRASTE = [
     (TEXT_SECONDARY, BALAO_EU, 4.5, "nome no balão do usuário"),
     (CYAN, SURFACE_ALT, 4.5, "cabeçalho de cartão de resposta"),
     (SUCCESS, BG, 4.5, "exportação concluída na conversa"),
-    (ERROR, BG, 3.0, "anel do orbe ouvindo"),
+    (ERROR, BG, 4.5, "erro no rodapé da conversa"),
+    (WARNING, SURFACE_ALT, 4.5, "título do cartão de confirmação"),
+    (LARANJA, BG, 3.0, "núcleo do orbe ouvindo"),
+    (WARNING, BG, 4.5, "microfone mudo no rodapé e núcleo do orbe mudo"),
+    (WARNING, SURFACE_ALT, 4.5, "botão Microfone mudo"),
+    (TEXT_SECONDARY, SURFACE, 4.5, "medidores de CPU e RAM"),
+    (TEXT_SECONDARY, BORDER, 3.0, "barra do medidor sobre o trilho"),
 ]
 
 
@@ -91,6 +99,10 @@ QPushButton[papel="status"][nivel="aviso"] {{ border-left: 3px solid {WARNING}; 
 QPushButton[papel="status"][nivel="erro"] {{ border-left: 3px solid {ERROR}; }}
 QPushButton[papel="status"][nivel="ok"] {{ border-left: 3px solid {SUCCESS}; }}
 QLabel#escutando {{ color: {SUCCESS}; }}
+QPushButton#mudo:checked {{ color: {WARNING}; border-color: {WARNING}; }}
+QLabel#medidor {{ color: {TEXT_SECONDARY}; font-size: 8pt; }}
+QProgressBar#medidor {{ background: {BORDER}; border: none; border-radius: 1px; max-height: 3px; min-height: 3px; }}
+QProgressBar#medidor::chunk {{ background: {TEXT_SECONDARY}; border-radius: 1px; }}
 QFrame#rodape {{ background: {SURFACE}; border-top: 1px solid {BORDER}; }}
 
 QLabel#logo {{ color: {CYAN}; font-size: 14pt; font-weight: 700; letter-spacing: 2px; }}

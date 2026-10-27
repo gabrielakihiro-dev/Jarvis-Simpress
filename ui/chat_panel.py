@@ -146,12 +146,13 @@ class ChatPanel(QFrame):
         self._timer_lote.timeout.connect(self._conferir_lote)
 
         self.escuta = Escuta(self)
-        self.escuta.acordou.connect(lambda m: self._rodape("Ouvi duas palmas. Pode falar." if m == "palmas" else "Chamou? Pode falar."))
+        self.escuta.acordou.connect(self._acordou)
         self.escuta.gravando.connect(self._gravando)
         self.escuta.gravou.connect(self._transcrever)
         self.escuta.aviso.connect(lambda m: self._rodape(m, erro=True))
         self.escuta.cancelou.connect(self.cancelar)
-        self.escuta.dormiu.connect(lambda: self._rodape("Dormindo — bata duas palmas ou chame o Jarvis."))
+        self.escuta.dormiu.connect(self._dormiu)
+        self.escuta.mudou_mudo.connect(self._mudou_mudo)
 
         # controles que a janela leva para o topo e para o menu ⚙
         self.combo = QComboBox()
@@ -172,6 +173,7 @@ class ChatPanel(QFrame):
 
         self.orbe = Orbe()
         self.orbe.clicado.connect(self._clicou_orbe)
+        self.escuta.nivel.connect(self.orbe.definir_nivel)
         lay.addWidget(self.orbe)
 
         self.texto = QTextBrowser()
@@ -224,6 +226,9 @@ class ChatPanel(QFrame):
         self.rodape.setObjectName("secundario")
         self.rodape.setWordWrap(True)
         self.rodape.setAccessibleName("Estado do assistente")
+        self.rodape.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse
+                                            | Qt.TextInteractionFlag.LinksAccessibleByKeyboard)
+        self.rodape.linkActivated.connect(lambda _: self.escuta.definir_mudo(False))  # só o aviso de mudo tem link
         lay.addWidget(self.rodape)
 
         self.setTabOrder(self.orbe, self.texto)
@@ -322,6 +327,8 @@ class ChatPanel(QFrame):
     def ligar_escuta(self, ligar: bool) -> bool:
         ok = self.escuta.ligar(ligar)
         self.orbe.escuta(self.escuta.ligada)
+        if not self.escuta.ligada and self.orbe.estado == "dormindo":
+            self.orbe.definir("ocioso")
         self.mudou_estado.emit()
         return ok
 
@@ -566,7 +573,29 @@ class ChatPanel(QFrame):
             self.orbe.definir("ocioso")
         self.escuta.pausar("fala", False)
 
+    def _acordou(self, motivo: str) -> None:
+        self._rodape("Ouvi duas palmas. Pode falar." if motivo == "palmas" else "Chamou? Pode falar.")
+        if self.orbe.estado == "dormindo":
+            self.orbe.definir("ocioso")
+
+    def _dormiu(self) -> None:
+        self._rodape("Dormindo — bata duas palmas ou chame o Jarvis.")
+        self.orbe.definir("dormindo")
+
+    def _mudou_mudo(self, mudo: bool) -> None:
+        self.orbe.definir_mudo(mudo)
+        if mudo:
+            self._avisar_mudo()
+        else:
+            self._rodape("Microfone ligado.")
+
+    def _avisar_mudo(self) -> None:
+        self.rodape.setText(f"<a href='mudo' style='color:{theme.WARNING}'>Microfone mudo — clique para ativar</a>")
+
     def _clicou_orbe(self) -> None:
+        if self.escuta.mudo:
+            self._avisar_mudo()
+            return
         if self.escuta.esta_gravando:
             self.escuta.parar(True)
         elif not self._ocupado_agora() and not (self._transcricao is not None and self._transcricao.isRunning()):

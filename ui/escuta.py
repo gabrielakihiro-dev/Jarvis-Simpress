@@ -66,6 +66,12 @@ def para_mono_16k(dados: bytes, canais: int, taxa: int, flutuante: bool = False)
     return a.tobytes()
 
 
+def suavizar_nivel(anterior: float, p: float) -> float:
+    """Nível 0..1 do microfone para a tela: sobe rápido com a voz e cai devagar no silêncio."""
+    alvo = min(1.0, p / 0.3)  # fala comum fica entre 0,05 e 0,3 de pico
+    return anterior + (alvo - anterior) * (0.6 if alvo > anterior else 0.15)
+
+
 def wav(pcm: bytes) -> bytes:
     bio = io.BytesIO()
     with wave.open(bio, "wb") as w:
@@ -250,6 +256,8 @@ class Escuta(QObject):
     aviso = pyqtSignal(str)
     cancelou = pyqtSignal()       # disse “cancelar” enquanto o Jarvis pensava, falava ou pedia confirmação
     dormiu = pyqtSignal()         # 2 min sem você falar: volta a esperar por palmas ou pelo nome
+    nivel = pyqtSignal(float)     # 0..1 suavizado, a cada bloco de 50 ms (para o orbe)
+    mudou_mudo = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -272,6 +280,8 @@ class Escuta(QObject):
         self._detector = DetectorPalmas()
         self._vosk: Optional[VoskWorker] = None
         self._dbg_pico, self._dbg_n = 0.0, 0
+        self._nivel = 0.0
+        self.mudo = False  # só em memória: ao abrir o Jarvis o microfone volta ligado
 
     @property
     def esta_gravando(self) -> bool:
@@ -308,6 +318,8 @@ class Escuta(QObject):
     def gravar(self, silenciosa: bool = False) -> bool:
         if self._gravando:
             return True
+        if self.mudo:  # cobre clique, palmas/nome ainda na fila do Vosk e a retomada da conversa
+            return False
         if not self._abrir():
             return False
         self._silenciosa = silenciosa
@@ -319,6 +331,23 @@ class Escuta(QObject):
             QApplication.beep()
         self.gravando.emit(True)
         return True
+
+    def definir_mudo(self, mudo: bool) -> None:
+        """Mudo descarta o áudio: sem palmas, nome, gravação nem nível. Desmutar volta à espera, sem acordar."""
+        if mudo == self.mudo:
+            return
+        self.mudo = mudo
+        if mudo:
+            if self._gravando:
+                self.parar(False)
+            self.dormir()
+            if self._vosk is not None:
+                self._vosk.zerar()
+            self._nivel = 0.0
+            self.nivel.emit(0.0)
+        else:
+            self._esfriar()
+        self.mudou_mudo.emit(mudo)
 
     def dormir(self) -> None:
         """Encerra a conversa contínua (sem aviso): “cancelar” ou parar uma gravação sem fala."""
@@ -376,11 +405,12 @@ class Escuta(QObject):
     def _ouviu(self, palavra: str) -> None:
         if palavra != "cancelar":
             self._acordar("nome")
-        elif self.ligada and self._pausas and not self._gravando:
+        elif self.ligada and self._pausas and not self._gravando and not self.mudo:
             self.cancelou.emit()
 
     def _acordar(self, motivo: str) -> None:
-        if not self.ligada or self._gravando or self._pausas or self._ignorar:
+        # mudo: um "jarbas" que ainda estava na fila do Vosk não acorda
+        if not self.ligada or self.mudo or self._gravando or self._pausas or self._ignorar:
             return
         self.acordou.emit(motivo)
         self.gravar()
@@ -429,7 +459,12 @@ class Escuta(QObject):
         self._resto = pcm
 
     def _bloco(self, bloco: bytes) -> None:
+        if self.mudo:
+            self.nivel.emit(0.0)
+            return
         p = pico(bloco)
+        self._nivel = suavizar_nivel(self._nivel, p)
+        self.nivel.emit(self._nivel)
         if DEPURAR:  # 1 linha por segundo: o que o microfone entrega e em que estado a escuta está
             self._dbg_pico, self._dbg_n = max(self._dbg_pico, p), self._dbg_n + 1
             if self._dbg_n >= 20:

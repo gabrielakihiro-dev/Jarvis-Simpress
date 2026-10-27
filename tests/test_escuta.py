@@ -149,3 +149,98 @@ def test_conversa_reiniciar_adia_o_sono_e_dormir_encerra():
     assert c.venceu()
     c.dormir()
     assert not c.venceu() and not c.acordada
+
+
+# --- nível do microfone e mudo -----------------------------------------------
+
+import pytest  # noqa: E402
+from PyQt6.QtCore import QCoreApplication  # noqa: E402
+
+from ui.escuta import BLOCO_BYTES, Escuta, suavizar_nivel  # noqa: E402
+
+
+def test_nivel_sobe_rapido_cai_devagar_e_fica_entre_0_e_1():
+    subiu = suavizar_nivel(0.0, 0.3)
+    assert subiu >= 0.5
+    caiu = suavizar_nivel(1.0, 0.0)
+    assert 0.8 <= caiu < 1.0
+    n = 0.0
+    for _ in range(50):
+        n = suavizar_nivel(n, 0.9)
+    assert n <= 1.0
+
+
+class Registro:
+    def __init__(self):
+        self.chamadas = []
+
+    def alimentar(self, *a):
+        self.chamadas.append(("alimentar", a))
+        return False
+
+    def limpar(self):
+        pass
+
+    def zerar(self):
+        pass
+
+
+APP = QCoreApplication.instance() or QCoreApplication([])  # viva no módulo: sem ela o Qt apaga os objetos
+
+
+@pytest.fixture
+def escuta():
+    e = Escuta()
+    e.ligada = True
+    e._detector, e._vosk = Registro(), Registro()
+    return e
+
+
+def bloco_alto():
+    return array("h", [20000] * (BLOCO_BYTES // 2)).tobytes()
+
+
+def test_mudo_descarta_o_bloco_e_emite_nivel_zero(escuta):
+    niveis = []
+    escuta.nivel.connect(niveis.append)
+    escuta._bloco(bloco_alto())
+    assert niveis[-1] > 0 and escuta._detector.chamadas  # sem mudo o bloco chega ao detector
+    escuta._detector.chamadas.clear()
+    escuta._vosk.chamadas.clear()
+    escuta.definir_mudo(True)
+    escuta._bloco(bloco_alto())
+    assert niveis[-1] == 0.0
+    assert escuta._detector.chamadas == [] and escuta._vosk.chamadas == []
+    assert escuta.gravar() is False and not escuta.esta_gravando
+
+
+def test_mutar_durante_gravacao_descarta_sem_enviar(escuta):
+    enviados, gravando = [], []
+    escuta.gravou.connect(enviados.append)
+    escuta.gravando.connect(gravando.append)
+    escuta._gravando, escuta._buf = True, bytearray(b"\x01" * 20000)
+    escuta.conversa.acordar()
+    escuta.definir_mudo(True)
+    assert enviados == [] and gravando == [False]
+    assert not escuta.esta_gravando and not escuta.conversa.acordada
+    escuta._bloco(bloco_alto())
+    assert not escuta._buf
+
+
+def test_desmutar_nao_acorda_a_conversa(escuta):
+    mudancas = []
+    escuta.mudou_mudo.connect(mudancas.append)
+    escuta.definir_mudo(True)
+    escuta.definir_mudo(False)
+    assert mudancas == [True, False] and not escuta.conversa.acordada and not escuta.esta_gravando
+
+
+def test_palavra_na_fila_do_vosk_nao_acorda_nem_cancela_com_mudo(escuta):
+    acordou, cancelou = [], []
+    escuta.acordou.connect(acordou.append)
+    escuta.cancelou.connect(lambda: cancelou.append(1))
+    escuta.definir_mudo(True)
+    escuta._ouviu("jarbas")
+    escuta._pausas.add("fala")
+    escuta._ouviu("cancelar")
+    assert acordou == [] and cancelou == []
