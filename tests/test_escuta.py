@@ -73,3 +73,13 @@ def test_conversao_48k_estereo_e_float():
     convertido = array("h", para_mono_16k(flut, 1, 44100, flutuante=True))
     assert len(convertido) == 160 and convertido[0] == 16383
     assert abs(pico(mono.tobytes()) - 1000 / 32768) < 1e-9
+
+
+def test_palmas_em_microfone_com_ruido_alto():
+    # ruído de fundo 0.2 (ganho alto): sem teto o limiar viraria 1.2 e nenhuma palma passaria
+    assert disparos(sequencia((0.2, 2500), (0.95, 50), (0.2, 300), (0.95, 50), (0.2, 1500))) == 1
+
+
+def test_voz_em_sala_barulhenta_conta_como_fala():
+    c = CorteSilencio(ruido=0.3)
+    assert c.minimo == 0.3

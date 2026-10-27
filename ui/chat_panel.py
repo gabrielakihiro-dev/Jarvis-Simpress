@@ -301,6 +301,7 @@ class ChatPanel(QFrame):
 
     def ligar_escuta(self, ligar: bool) -> bool:
         ok = self.escuta.ligar(ligar)
+        self.orbe.escuta(self.escuta.ligada)
         self.mudou_estado.emit()
         return ok
 

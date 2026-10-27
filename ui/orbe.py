@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QWidget
 
 from ui import theme
 
-ROTULOS = {"ocioso": "Clique, bata duas palmas ou diga “Jarvis”", "pensando": "Pensando…",
+ROTULOS = {"ocioso": "Clique para falar", "pensando": "Pensando…",
            "falando": "Falando…", "ouvindo": "Ouvindo…"}
 
 
@@ -32,6 +32,10 @@ class Orbe(QWidget):
         self._diametro = 64 if sim else 120
         self.setFixedHeight(self._diametro + 30)
         self.update()
+
+    def escuta(self, ligada: bool) -> None:
+        ROTULOS["ocioso"] = "Clique, bata duas palmas ou diga “Jarvis”" if ligada else "Clique para falar"
+        self.definir(self.estado)
 
     def definir(self, estado: str) -> None:
         self.estado = estado

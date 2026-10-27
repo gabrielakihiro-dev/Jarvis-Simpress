@@ -15,7 +15,7 @@ from array import array
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 from PyQt6.QtMultimedia import QAudioFormat, QAudioSource, QMediaDevices
 from PyQt6.QtWidgets import QApplication
 
@@ -84,7 +84,7 @@ class DetectorPalmas:
 
     def alimentar(self, p: float) -> bool:
         self.t += BLOCO_MS
-        if p >= max(self.limiar, self.ruido * 6):
+        if p >= max(self.limiar, min(self.ruido * 6, 0.8)):  # teto: microfone com ganho alto não pode tornar a palma impossível
             if self._alto == 0:
                 self._quieto_antes = self._quieto_ms
             self._alto += 1
@@ -116,7 +116,7 @@ class CorteSilencio:
     """Diz quando parar a gravação: "fim" após 1,2 s de silêncio depois da voz, "vazio" sem voz em 5 s."""
 
     def __init__(self, ruido: float = 0.0, silencio_ms: int = 1200, max_ms: int = 20000, espera_ms: int = 5000):
-        self.minimo = max(0.04, ruido * 3)
+        self.minimo = min(max(0.04, ruido * 3), 0.3)  # teto: sala barulhenta não pode esconder a voz
         self.silencio_ms, self.max_ms, self.espera_ms = silencio_ms, max_ms, espera_ms
         self.t = self._ultimo = 0
         self.voz = False
@@ -297,11 +297,16 @@ class Escuta(QObject):
             self.aviso.emit("O microfone usa um formato de áudio que o Jarvis ainda não lê.")
             return False
         self._fmt, self._cru, self._resto = fmt, b"", b""
-        self._checar, self._max_inicio = 3000 // BLOCO_MS, 0.0  # 3 s para ver se o microfone entrega som
+        self._mudo = 0  # blocos seguidos de silêncio digital
         self._fonte = QAudioSource(entrada, fmt, self)
         self._dev = self._fonte.start()
         self._dev.readyRead.connect(self._ler)
         return True
+
+    def _reabrir(self) -> None:
+        if self._fonte is not None and not self._gravando:
+            self._fechar()
+            self._abrir()
 
     def _fechar(self) -> None:
         if self._fonte is not None:
@@ -325,12 +330,12 @@ class Escuta(QObject):
 
     def _bloco(self, bloco: bytes) -> None:
         p = pico(bloco)
-        if self._checar:
-            self._max_inicio = max(self._max_inicio, p)
-            self._checar -= 1
-            if not self._checar and self._max_inicio < MICROFONE_MUDO:
-                self.aviso.emit("O microfone está entregando silêncio (mudo, volume zero ou bloqueado no Windows). "
-                                "Palmas, “Jarvis” e o 🎤 não vão funcionar até ele captar som.")
+        self._mudo = self._mudo + 1 if p < MICROFONE_MUDO else 0
+        if self._mudo == 3000 // BLOCO_MS and not self._gravando:
+            self.aviso.emit("O microfone está entregando silêncio (mudo, volume zero ou bloqueado no Windows). "
+                            "Palmas, “Jarvis” e o 🎤 não funcionam até ele captar som.")
+            # um microfone desmutado depois de aberto pode continuar mudo no Windows: reabre
+            QTimer.singleShot(0, self._reabrir)
         if self._gravando:
             self._buf += bloco
             fim = self._corte.alimentar(p)

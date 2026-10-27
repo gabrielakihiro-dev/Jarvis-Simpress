@@ -121,6 +121,11 @@ QLineEdit:focus, QComboBox:focus {{ border: 2px solid {CYAN}; }}
 QComboBox QAbstractItemView {{ background: {SURFACE_ALT}; border: 1px solid {BORDER_STRONG};
     selection-background-color: {CYAN}; selection-color: {ON_CYAN}; }}
 
+QMenu {{ background: {SURFACE_ALT}; color: {TEXT}; border: 1px solid {BORDER_STRONG}; padding: 4px; }}
+QMenu::item {{ padding: 6px {SP['lg']}px 6px 28px; border-radius: 4px; }}
+QMenu::item:selected {{ background: {CYAN}; color: {ON_CYAN}; }}
+QMenu::separator {{ height: 1px; background: {BORDER}; margin: 4px 8px; }}
+
 QTextBrowser {{ background: {BG}; border: 1px solid {BORDER}; border-radius: {RAIO['sm']}px; padding: {SP['sm']}px; }}
 QTextBrowser:focus {{ border: 2px solid {CYAN}; }}
 
