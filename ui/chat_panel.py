@@ -579,7 +579,7 @@ class ChatPanel(QFrame):
             self.orbe.definir("ocioso")
 
     def _dormiu(self) -> None:
-        self._rodape("Dormindo — bata duas palmas ou chame o Jarvis.")
+        self._rodape("Dormindo — diga Hey Jarvis ou clique no orbe.")
         self.orbe.definir("dormindo")
 
     def _mudou_mudo(self, mudo: bool) -> None:

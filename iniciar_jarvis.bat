@@ -6,12 +6,18 @@ echo         INICIANDO O J.A.R.V.I.S SIMPRESS (GUI)
 echo ========================================================
 echo.
 cd /d "%~dp0"
-if not exist ".venv" (
+set "VENV="
+if exist ".venv313\Scripts\activate.bat" set "VENV=.venv313"
+if not defined VENV if exist ".venv\Scripts\activate.bat" set "VENV=.venv"
+if not defined VENV (
     echo [1/3] Criando ambiente virtual Python...
-    python -m venv .venv
+    py -3.13 --version > nul 2>&1
+    if errorlevel 1 (python -m venv .venv) else (py -3.13 -m venv .venv313)
 )
+if not defined VENV if exist ".venv313\Scripts\activate.bat" set "VENV=.venv313"
+if not defined VENV set "VENV=.venv"
 echo [2/3] Ativando ambiente virtual...
-call ".venv\Scripts\activate.bat"
+call "%VENV%\Scripts\activate.bat"
 python -m pip install -q -r requirements.txt
 echo [3/3] Abrindo Interface Futurista PyQt6...
 echo.

@@ -6,7 +6,11 @@ echo       INICIANDO O J.A.R.V.I.S SIMPRESS (TERMINAL)
 echo ========================================================
 echo.
 cd /d "%~dp0"
-call ".venv\Scripts\activate.bat"
+if exist ".venv313\Scripts\activate.bat" (
+    call ".venv313\Scripts\activate.bat"
+) else (
+    call ".venv\Scripts\activate.bat"
+)
 python jarvis.py
 echo.
 pause

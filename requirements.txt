@@ -6,3 +6,5 @@ rich>=13.7.0
 PyQt6>=6.7
 vosk>=0.3.41
 psutil>=5.9
+openwakeword>=0.6.0
+onnxruntime>=1.18
