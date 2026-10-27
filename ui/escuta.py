@@ -10,6 +10,7 @@ import io
 import json
 import os
 import queue
+import time
 import wave
 from array import array
 from pathlib import Path
@@ -28,6 +29,20 @@ PALAVRAS = {"jarbas", "cancelar"}
 # iscas: sem elas, "cancelei"/"cancelada" da própria fala do Jarvis viram "cancelar"
 GRAMATICA = ["jarbas", "cancelar", "cancelei", "cancelada", "cancelado", "cancelou", "cancelamento", "[unk]"]
 MICROFONE_MUDO = 0.001  # pico máximo de uma gravação inteira abaixo disso: microfone mudo, não pessoa calada
+DEPURAR = os.environ.get("JARVIS_PALMAS_DEBUG") == "1"
+LOG_PALMAS = Path(__file__).resolve().parent.parent / "data" / "palmas_debug.log"  # data/ fica fora do Git
+
+
+def _depurar(msg: str) -> None:
+    """JARVIS_PALMAS_DEBUG=1: anota em data/palmas_debug.log o que o detector viu (só picos, sem áudio)."""
+    if not DEPURAR:
+        return
+    try:
+        LOG_PALMAS.parent.mkdir(exist_ok=True)
+        with LOG_PALMAS.open("a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
+    except OSError:
+        pass
 
 
 # --- lógica pura (testada sem microfone) -----------------------------------
@@ -85,12 +100,17 @@ class DetectorPalmas:
 
     def alimentar(self, p: float) -> bool:
         self.t += BLOCO_MS
-        if p >= max(self.limiar, min(self.ruido * 6, 0.8)):  # teto: microfone com ganho alto não pode tornar a palma impossível
+        efetivo = max(self.limiar, min(self.ruido * 6, 0.8))  # teto: microfone com ganho alto não pode tornar a palma impossível
+        if DEPURAR and (p >= 0.04 or self._alto):
+            _depurar(f"bloco t={self.t} pico={p:.3f} limiar={efetivo:.3f} ruido={self.ruido:.3f} "
+                     f"{'ALTO' if p >= efetivo else 'baixo'} seguidos={self._alto + (p >= efetivo)}")
+        if p >= efetivo:
             if self._alto == 0:
                 self._quieto_antes = self._quieto_ms
             self._alto += 1
             self._quieto_ms = 0
             if self._alto == 3:  # som longo (voz, batida de porta): não é palma
+                _depurar("descartado: som longo (3 blocos altos seguidos)")
                 self._palmas.clear()
             return False
         self.ruido = p if self.ruido == 0 else self.ruido * 0.95 + p * 0.05
@@ -100,17 +120,23 @@ class DetectorPalmas:
             self._palma(self.t - BLOCO_MS * (blocos + 1))
         if self._palmas and self.t - self._palmas[-1] > 700:
             duas = len(self._palmas) == 2 and self.t > self.CALIBRACAO_MS
+            _depurar(f"fim da janela: {len(self._palmas)} palma(s), calibrando={self.t <= self.CALIBRACAO_MS} -> {'DISPARA' if duas else 'nada'}")
             self._palmas.clear()
             return duas
         return False
 
     def _palma(self, inicio: int) -> None:
         if self._palmas and inicio - self._palmas[-1] < 120:
-            return  # eco da mesma palma
+            _depurar("ignorado: eco da mesma palma")
+            return
         if self._palmas:
             self._palmas.append(inicio)
+            _depurar(f"palma {len(self._palmas)} aceita")
         elif self._quieto_antes >= 150:
             self._palmas.append(inicio)
+            _depurar("palma 1 aceita")
+        else:
+            _depurar(f"rejeitada: só {self._quieto_antes} ms de silêncio antes (precisa 150)")
 
 
 class CorteSilencio:
@@ -306,6 +332,7 @@ class Escuta(QObject):
             self.aviso.emit("O microfone usa um formato de áudio que o Jarvis ainda não lê.")
             return False
         self._fmt, self._cru, self._resto = fmt, b"", b""
+        _depurar(f"microfone: {entrada.description()} {fmt.sampleRate()} Hz, {fmt.channelCount()} canal(is), {fmt.sampleFormat().name}")
         self._fonte = QAudioSource(entrada, fmt, self)
         self._dev = self._fonte.start()
         self._dev.readyRead.connect(self._ler)
@@ -347,10 +374,14 @@ class Escuta(QObject):
         if not self.ligada:
             return
         if self._pausas:  # pausada, só “cancelar” vale: palmas e nome ficam de fora
+            if DEPURAR and p >= 0.1:
+                _depurar(f"som ignorado: escuta pausada por {sorted(self._pausas)}")
             if self._vosk is not None:
                 self._vosk.alimentar(bloco)
             return
         if self._ignorar:
+            if DEPURAR and p >= 0.1:
+                _depurar("som ignorado: esfriando depois de bipe/fala")
             self._ignorar -= 1
             return
         if self._detector.alimentar(p):
