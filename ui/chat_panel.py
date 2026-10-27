@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 import voice
-from llm_client import MODELOS_CATALOGO, LLMClient, Resposta
+from llm_client import MODELOS_CATALOGO, LLMClient, Resposta, listar_modelos_ao_vivo
 from ui import theme
 from ui.widgets import CartaoConfirmacao, botao, renderizar
 
@@ -52,6 +52,15 @@ class AgentWorker(QThread):
             self.pronto.emit(self._tarefa(self.status.emit))
         except Exception as e:  # a tela nunca deve ficar presa em "pensando"
             self.pronto.emit(Resposta(texto=f"Erro inesperado: {e}"))
+
+
+class ModelosWorker(QThread):
+    """Busca a lista de modelos do OpenRouter fora da tela."""
+
+    pronto = pyqtSignal(list)
+
+    def run(self) -> None:
+        self.pronto.emit(listar_modelos_ao_vivo())
 
 
 class FalaWorker(QThread):
@@ -110,12 +119,12 @@ class ChatPanel(QFrame):
         self.combo = QComboBox()
         self.combo.setAccessibleName("Modelo de IA")
         self.combo.setEditable(False)
-        slugs = [s for s, _ in MODELOS_CATALOGO.values()]
-        if llm.modelo_principal not in slugs:
-            slugs.insert(0, llm.modelo_principal)
-        self.combo.addItems(slugs)
-        self.combo.setCurrentIndex(slugs.index(llm.modelo_principal))
-        self.combo.currentTextChanged.connect(self._trocar_modelo)
+        self.combo.setMaxVisibleItems(15)
+        self._preencher_modelos([(s, s) for s, _ in MODELOS_CATALOGO.values()])
+        self.combo.currentIndexChanged.connect(self._trocar_modelo)
+        self._modelos = ModelosWorker(self)
+        self._modelos.pronto.connect(self._modelos_ao_vivo)
+        self._modelos.start()
         self.btn_voz = botao("", "fantasma")
         self.btn_voz.setCheckable(True)
         self.btn_voz.clicked.connect(self._alternar_voz)
@@ -197,7 +206,27 @@ class ChatPanel(QFrame):
 
     # --- ações ------------------------------------------------------------
 
-    def _trocar_modelo(self, slug: str) -> None:
+    def _preencher_modelos(self, modelos: list) -> None:
+        """Favoritos (catálogo) no topo, depois o resto; o modelo atual sempre fica na lista."""
+        favoritos = [s for s, _ in MODELOS_CATALOGO.values()]
+        rotulo = dict(modelos)
+        atual = self.llm.modelo_principal
+        ordem = [s for s in favoritos if s in rotulo] + [s for s in rotulo if s not in favoritos]
+        if atual not in ordem:
+            ordem.insert(0, atual)
+        self.combo.blockSignals(True)
+        self.combo.clear()
+        for s in ordem:
+            self.combo.addItem(("★ " if s in favoritos else "") + rotulo.get(s, s), s)
+        self.combo.setCurrentIndex(ordem.index(atual))
+        self.combo.blockSignals(False)
+
+    def _modelos_ao_vivo(self, modelos: list) -> None:
+        if modelos:  # sem rede, fica o catálogo fixo
+            self._preencher_modelos(modelos)
+
+    def _trocar_modelo(self, _indice: int) -> None:
+        slug = self.combo.currentData()
         if slug:
             self.llm.trocar_modelo(slug)
             self.mudou_estado.emit()
@@ -353,7 +382,7 @@ class ChatPanel(QFrame):
 
     def aguardar_fim(self, ms: int = 2000) -> None:
         """Chamado no fechamento da janela: espera a chamada em andamento terminar."""
-        for t in (self._fala, self._transcricao):
+        for t in (self._fala, self._transcricao, self._modelos):
             if t is not None and t.isRunning():
                 t.wait(ms)
         if self._mic is not None:

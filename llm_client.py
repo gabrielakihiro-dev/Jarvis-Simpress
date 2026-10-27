@@ -10,8 +10,9 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import httpx
 from openai import OpenAI
 
 from lgpd import TOKEN_PATTERN, Mascara
@@ -35,6 +36,25 @@ MODELOS_CATALOGO = {
 }
 
 MAX_RODADAS = 5
+URL_MODELOS = "https://openrouter.ai/api/v1/models"
+
+
+def listar_modelos_ao_vivo(timeout: float = 6.0) -> List[Tuple[str, str]]:
+    """Modelos do OpenRouter que aceitam ferramentas, como (slug, rótulo com preço). [] se a rede falhar."""
+    try:
+        dados = httpx.get(URL_MODELOS, timeout=timeout).raise_for_status().json()["data"]
+    except Exception:
+        return []
+    saida = []
+    for m in dados:
+        if "tools" not in (m.get("supported_parameters") or []):
+            continue
+        try:
+            preco = f"US$ {float(m['pricing']['prompt']) * 1_000_000:.2f}/M"
+        except (KeyError, TypeError, ValueError):
+            preco = "preço n/d"
+        saida.append((m["id"], f"{m['id']} · {preco}"))
+    return sorted(saida)
 # Resposta que só anuncia a consulta ("Vou consultar...") sem ter chamado ferramenta.
 PROMESSA = re.compile(r"^\s*(vou|vamos|irei|deixe-me|um momento|aguarde)\b", re.IGNORECASE)
 TIMEOUT_API = 60.0
