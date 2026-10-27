@@ -39,6 +39,30 @@ def limpar_markdown_para_fala(texto: str) -> str:
     return limpo.strip()
 
 
+MAX_FRASES_FALA = 3
+MAX_CHARS_FALA = 280
+AVISO_RESTANTE = "O restante está na tela."
+
+
+def resumo_para_fala(texto: str, max_frases: int = MAX_FRASES_FALA, max_chars: int = MAX_CHARS_FALA) -> str:
+    """Versão curta para falar: poucas frases, sem tabelas. O texto completo fica só na tela."""
+    linhas = (texto or "").split("\n")
+    corpo = [l for l in linhas if "|" not in l]  # tabela lida em voz alta vira ruído
+    cortou = len(corpo) < len(linhas)
+    frases = [f for f in re.split(r"(?<=[.!?])\s+|\n+", limpar_markdown_para_fala("\n".join(corpo))) if f.strip()]
+    saida, tamanho = [], 0
+    for f in frases:
+        if saida and (len(saida) >= max_frases or tamanho + len(f) > max_chars):
+            cortou = True
+            break
+        saida.append(f)
+        tamanho += len(f) + 1
+    fala = " ".join(saida)
+    if len(fala) > max_chars:  # 1ª frase sozinha já passa do limite: corta na última palavra inteira
+        fala, cortou = fala[:max_chars].rsplit(" ", 1)[0].rstrip(",;:") + ".", True
+    return f"{fala} {AVISO_RESTANTE}" if cortou and fala else fala
+
+
 def trechos(texto: str, limite: int = 300) -> list:
     """Divide a fala em trechos: o 1º é só a primeira frase, para a voz começar logo."""
     frases = [f for f in re.split(r"(?<=[.!?;:])\s+|\n+", limpar_markdown_para_fala(texto)) if f.strip()]

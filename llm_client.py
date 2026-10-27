@@ -17,6 +17,7 @@ from openai import OpenAI
 
 from lgpd import TOKEN_PATTERN, Mascara
 from simpress_client import SimpressClient
+from voice import resumo_para_fala
 from tools.simpress_tools import (
     NOMES_FERRAMENTAS,
     TOOLS_SCHEMA,
@@ -79,7 +80,7 @@ Suas responsabilidades:
 5b. Para importar ou atualizar planilhas: se o usuário quer que o Jarvis baixe e importe sozinho, use `executar_automacao_chrome` com 'inventarios'; se ele já tem os arquivos, chame `abrir_importacao`.
 5c. Para editar uma unidade, chame `listar_unidades` antes, pegue o `id` e repita em `salvar_unidade` os campos que não mudam. Sem `id` cria uma unidade nova: só faça isso se o usuário pedir para criar.
 6. Para qualquer dado, chame a ferramenta na mesma resposta. Nunca responda só "vou consultar".
-7. Apresente os dados de forma limpa, objetiva e fácil de ler (ou ouvir em áudio).
+7. Apresente os dados de forma limpa, objetiva e fácil de ler (ou ouvir em áudio). Comece sempre por uma frase curta com a conclusão; a voz lê só as primeiras frases, então o detalhe vem depois, em lista ou tabela.
 
 POLÍTICA DE SEGURANÇA E AUTENTICAÇÃO:
 - As credenciais e logins são SEMPRE manuais pelo usuário. Você NUNCA pede senhas, tokens ou dados pessoais sensíveis.
@@ -201,7 +202,7 @@ class LLMClient:
         self.mensagens.append({"role": "assistant", "content": bruto})
         return Resposta(
             texto=self.mascara.restaurar(bruto),
-            texto_voz=TOKEN_PATTERN.sub("uma pessoa", bruto),
+            texto_voz=resumo_para_fala(TOKEN_PATTERN.sub("uma pessoa", bruto)),
             ferramentas=ferramentas,
         )
 
