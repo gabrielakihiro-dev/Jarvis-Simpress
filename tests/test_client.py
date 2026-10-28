@@ -216,3 +216,40 @@ def test_listar_nomes_percorre_paginas_e_junta_campos():
 
 def test_listar_nomes_devolve_none_se_falhar():
     assert cliente(lambda req: httpx.Response(500, json={"detail": "x"})).listar_nomes_usuarios() is None
+
+
+def test_divergencias_localidade_cruza_com_transferencias():
+    def handler(req):
+        if req.url.path == "/api/historico-comparacoes":
+            return httpx.Response(200, json={"eventos": [{"id": "e1", "horario": "2026-10-27T15:00"}]})
+        if req.url.path == "/api/historico-comparacoes/e1":
+            return httpx.Response(200, json={"evento": {"comparacao": {"divergencias_local": [
+                {"serie": " brj1 ", "computador": "PC1", "local_previsto": "Maringá", "local_detalhes": "Curitiba"},
+            ]}}})
+        if req.url.path == "/api/historico-transferencias":
+            return httpx.Response(200, json={"itens": [
+                {"serial": "BRJ1", "retirada_cidade": "Curitiba", "entrega_cidade": "Maringá", "entrega_contato": "X", "entrega_obs": ""},
+                {"serial": "OUTRASERIE", "retirada_cidade": "A", "entrega_cidade": "B"},
+            ]})
+        return httpx.Response(404)
+
+    res = cliente(handler).listar_divergencias_localidade()
+    assert res["total"] == 1 and res["itens"][0]["serie"] == "brj1"
+    assert res["transferencias_relacionadas"] == [
+        {"serie": "BRJ1", "de": "Curitiba", "para": "Maringá", "contato_entrega": "X", "observacao": ""}
+    ]
+
+
+def test_divergencias_localidade_avisa_se_transferencias_falharem():
+    def handler(req):
+        if req.url.path == "/api/historico-comparacoes":
+            return httpx.Response(200, json={"eventos": [{"id": "e1", "horario": "2026-10-27T15:00"}]})
+        if req.url.path == "/api/historico-comparacoes/e1":
+            return httpx.Response(200, json={"evento": {"comparacao": {"divergencias_local": [
+                {"serie": "BRJ1", "computador": "PC1", "local_previsto": "Maringá", "local_detalhes": "Curitiba"},
+            ]}}})
+        return httpx.Response(500, json={"detail": "fora do ar"})
+
+    res = cliente(handler).listar_divergencias_localidade()
+    assert "transferencias_relacionadas" not in res
+    assert "indisponível" in res["aviso_transferencias"] or "Não foi possível" in res["aviso_transferencias"]

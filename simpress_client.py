@@ -379,6 +379,86 @@ class SimpressClient:
             return {"erro": "Identificador do histórico inválido."}
         return self._leitura(f"/api/historico-comparacoes/{evento_id}")
 
+    def listar_divergencias_localidade(self) -> Dict[str, Any]:
+        """Lista completa da seção 'Localidade divergente' do último cruzamento de planilhas."""
+        ok, dados = self._chamar("GET", "/api/historico-comparacoes")
+        if not ok:
+            return {"erro": dados}
+        eventos = dados.get("eventos", [])
+        if not eventos:
+            return {"mensagem": "Nenhum histórico de comparação registrado até o momento."}
+        evento_id = eventos[0].get("id")
+        ok, detalhe = self._chamar("GET", f"/api/historico-comparacoes/{evento_id}")
+        if not ok:
+            return {"erro": detalhe}
+        divergencias = ((detalhe.get("evento") or {}).get("comparacao") or {}).get("divergencias_local") or []
+        itens = [
+            {
+                "serie": d.get("serie", ""),
+                "computador": d.get("computador", ""),
+                "local_previsto": d.get("local_previsto", ""),
+                "local_na_simpress": d.get("local_detalhes", ""),
+            }
+            for d in divergencias
+        ]
+        resultado: Dict[str, Any] = {
+            "total": len(itens),
+            "horario_comparacao": eventos[0].get("horario", ""),
+            "itens": _aparar(itens),
+        }
+        seriais = {str(d.get("serie", "")).strip().upper() for d in divergencias} - {""}
+        if seriais:
+            ok_transf, dados_transf = self._chamar("GET", "/api/historico-transferencias")
+            if not ok_transf:
+                resultado["aviso_transferencias"] = "Não foi possível consultar o histórico de transferências agora."
+            elif isinstance(dados_transf, dict):
+                relacionadas = []
+                for t in dados_transf.get("itens") or []:
+                    if not isinstance(t, dict):
+                        continue
+                    serie_t = str(t.get("serial") or "").strip().upper()
+                    if serie_t in seriais:
+                        relacionadas.append({
+                            "serie": serie_t,
+                            "de": t.get("retirada_cidade", ""),
+                            "para": t.get("entrega_cidade", ""),
+                            "contato_entrega": t.get("entrega_contato", ""),
+                            "observacao": t.get("entrega_obs", ""),
+                        })
+                resultado["transferencias_relacionadas"] = _aparar(relacionadas)
+        return resultado
+
+    def consultar_divergencia_localidade(self, serial: str) -> Dict[str, Any]:
+        """Verifica, no último cruzamento de planilhas, se a série está na seção 'Localidade divergente'."""
+        serial = serial.strip().upper()
+        if not serial:
+            return {"erro": "Número de série não informado."}
+        ok, dados = self._chamar("GET", "/api/historico-comparacoes")
+        if not ok:
+            return {"erro": dados}
+        eventos = dados.get("eventos", [])
+        if not eventos:
+            return {"mensagem": "Nenhum histórico de comparação registrado até o momento."}
+        evento_id = eventos[0].get("id")
+        ok, detalhe = self._chamar("GET", f"/api/historico-comparacoes/{evento_id}")
+        if not ok:
+            return {"erro": detalhe}
+        divergencias = ((detalhe.get("evento") or {}).get("comparacao") or {}).get("divergencias_local") or []
+        item = next((d for d in divergencias if str(d.get("serie", "")).strip().upper() == serial), None)
+        if not item:
+            return {
+                "divergente": False,
+                "mensagem": f"Série '{serial}' não está na lista de localidade divergente do último cruzamento ({eventos[0].get('horario', '')}).",
+            }
+        return {
+            "divergente": True,
+            "serie": serial,
+            "computador": item.get("computador", ""),
+            "local_previsto": item.get("local_previsto", ""),
+            "local_na_simpress": item.get("local_detalhes", ""),
+            "horario_comparacao": eventos[0].get("horario", ""),
+        }
+
     def listar_unidades(self) -> Dict[str, Any]:
         """Todas as unidades com o id, para a IA conseguir editar qualquer uma."""
         ok, dados = self._chamar("GET", "/api/unidades")
@@ -424,7 +504,20 @@ class SimpressClient:
         return {"sucesso": True, "arquivo": alvo.name, "pasta": str(pasta)}
 
     def listar_transferencias(self) -> Dict[str, Any]:
-        return self._leitura("/api/historico-transferencias")
+        resultado = self._leitura("/api/historico-transferencias")
+        dados = resultado.get("dados")
+        itens = dados.get("itens") if isinstance(dados, dict) else None
+        if isinstance(itens, list):
+            seriais = sorted({str(item.get("serial") or "").strip().upper() for item in itens if isinstance(item, dict)} - {""})
+            hostnames: Dict[str, str] = {}
+            for serial in seriais:
+                ok, equip = self._chamar("GET", f"/api/equipamento/{serial}")
+                if ok and isinstance(equip, dict):
+                    hostnames[serial] = equip.get("apelido", "")
+            for item in itens:
+                if isinstance(item, dict):
+                    item["hostname"] = hostnames.get(str(item.get("serial") or "").strip().upper(), "")
+        return resultado
 
     def listar_pendencias_usuarios(self) -> Dict[str, Any]:
         return self._leitura("/api/usuarios/pendencias")
