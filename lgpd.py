@@ -24,6 +24,7 @@ TOKEN_PATTERN = re.compile(r"\[PESSOA_\d+\]")
 CHAVES_SENSIVEIS = frozenset({
     "usuario_logado", "usuarios_logados", "usuario_manual", "usuario", "apelido",
     "nome", "nome_pessoa", "solicitante", "responsavel", "login", "email",
+    "entrega_contato", "retirada_contato",
 })
 # Textos livres (escritos por pessoas) onde um nome conhecido pode aparecer no meio da frase.
 CHAVES_TEXTO_LIVRE = frozenset({

@@ -64,3 +64,11 @@ def test_nomes_da_base_mascaram_texto_e_sobrevivem_a_limpar():
     m.limpar()
     assert m.ocultar_conhecidos("Joana Lima") == "[PESSOA_1]"
     assert m.restaurar("[PESSOA_1]") == "Joana Lima"
+
+
+def test_mascara_contatos_de_transferencia():
+    m = Mascara()
+    dados = {"itens": [{"entrega_contato": "Ana Lima", "retirada_contato": "Rui Costa", "serie": "X1"}]}
+    mascarado = m.mascarar(dados)
+    assert "Ana" not in str(mascarado) and "Rui" not in str(mascarado)
+    assert m.restaurar(mascarado) == dados
