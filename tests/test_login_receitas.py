@@ -178,3 +178,17 @@ def test_adaptador_confere_host_colado_no_fill():
     page.url = "https://login.microsoftonline.com/x"
     p.preencher("senha", "S3nh@", hosts=("login.microsoftonline.com",))
     assert page.campo.preenchido == "S3nh@"
+
+
+def test_picker_ja_logou_sem_campo_de_senha_ok():
+    # A aba já saiu do login (o seletor de conta entrou): sem campo de senha não confere host nem digita.
+    p = PaginaFalsa(hosts=["login.microsoftonline.com", "simpress-my.sharepoint.com"], campos=set())
+    r = rodar_receita("dashboard", p, obter_senha=lambda c: 1 / 0, dormir=lambda s: None)
+    assert r == {"login": "ok", "site": "dashboard"} and p.preenchidos == []
+
+
+def test_sem_campo_de_senha_parado_no_login_aguarda_mfa():
+    relogio = iter(range(0, 1000, 2))
+    p = PaginaFalsa(hosts=["login.microsoftonline.com"] * 999, campos=set())
+    r = rodar_receita("dashboard", p, obter_senha=lambda c: 1 / 0, agora=lambda: next(relogio), dormir=lambda s: None)
+    assert r == {"login": "aguardando_mfa", "site": "dashboard"} and p.preenchidos == []

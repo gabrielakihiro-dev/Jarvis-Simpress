@@ -13,7 +13,16 @@ from urllib.parse import urlparse
 
 from sites import normalizar
 
-PORTA = int(os.environ.get("JARVIS_CHROME_PORTA", "9334"))
+def _porta(valor) -> int:
+    """Porta do CDP do Jarvis; inválida ou 9333 (Chrome do Simpress) cai em 9334."""
+    try:
+        p = int(valor)
+    except (TypeError, ValueError):
+        return 9334
+    return 9334 if p == 9333 else p
+
+
+PORTA = _porta(os.environ.get("JARVIS_CHROME_PORTA", "9334"))
 PERFIL = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "JarvisChrome"
 _ABAS_VAZIAS = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/")
 
@@ -172,6 +181,7 @@ def achar_elemento(page, alvo: str):
 
 
 _JS_NOMES = r"""(e) => {
+  e = e.closest('button, a, [role=button], input[type=submit], input[type=button], input[type=image]') || e;
   const attrs = ['aria-label', 'title', 'alt'];
   const t = [e.innerText];
   for (const a of attrs) t.push(e.getAttribute(a));
@@ -180,6 +190,8 @@ _JS_NOMES = r"""(e) => {
     const r = id && document.getElementById(id);
     if (r) t.push(r.innerText || r.getAttribute('aria-label'));
   }
+  // innerText cola filhos inline sem espaço ("Excluiritem"): cada folha entra separada.
+  for (const d of e.querySelectorAll('*')) if (!d.children.length) t.push(d.innerText);
   for (const d of e.querySelectorAll('[alt], [title], [aria-label]')) for (const a of attrs) t.push(d.getAttribute(a));
   return t.filter(x => x && x.trim());
 }"""

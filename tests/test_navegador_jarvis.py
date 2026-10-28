@@ -124,3 +124,7 @@ def test_pagina_ativa_sem_contexto_cria_contexto(monkeypatch):
     _ordem(monkeypatch, None)
     br = _Browser(None)
     assert nj.pagina_ativa(br) == "nova" and br.contexts == [br.novo]
+
+
+def test_porta_invalida_ou_9333_cai_em_9334():
+    assert [nj._porta(v) for v in ("abc", "", None, "9333", 9333, "9400")] == [9334, 9334, 9334, 9334, 9334, 9400]

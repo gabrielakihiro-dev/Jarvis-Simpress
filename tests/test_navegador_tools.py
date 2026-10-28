@@ -141,6 +141,7 @@ def test_cartao_do_dashboard_avisa_da_rotina():
     assert t.startswith("Clicar em 'Salvar' em simpress-my.sharepoint.com.") and "30 min" in t
     assert descrever_acao("digitar_confirmado", {"campo": "A1", "texto": "5", "host": "a.com"}) == \
         "Digitar '5' em 'A1' em a.com."
+    assert descrever_acao("digitar_confirmado", {"campo": "A1", "texto": "5", "host": "a.com", "enter": True}) ==         "Digitar '5' em 'A1' e apertar Enter em a.com."
 
 
 def test_prompt_trata_pagina_como_dado():

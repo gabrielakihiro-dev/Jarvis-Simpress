@@ -166,7 +166,7 @@ TOOLS = [
         {"campo": CAMPO, "texto": TEXTO, "enter": ENTER, "host": HOST_ARG},
         ["campo", "texto", "host"],
         altera_dados=True,
-        descrever=lambda a: f"Digitar '{a.get('texto', '')}' em '{a.get('campo', '')}' em {a.get('host', '')}." + _aviso(a),
+        descrever=lambda a: f"Digitar '{a.get('texto', '')}' em '{a.get('campo', '')}'{' e apertar Enter' if a.get('enter') else ''} em {a.get('host', '')}." + _aviso(a),
     ),
     tool(
         "abas",

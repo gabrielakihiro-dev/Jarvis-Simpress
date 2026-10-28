@@ -75,10 +75,11 @@ def rodar_receita(
                 if pagina.tem_campo("usuario"):
                     pagina.preencher("usuario", credenciais.CREDENCIAIS[valor]["usuario"])
             elif tipo == "senha":
+                if not pagina.tem_campo("senha"):  # espera o campo; sem ele o passo "esperar" decide
+                    continue
                 senha = obter_senha(valor)
                 if not senha:
                     return falhou(SEM_SENHA)
-                pagina.tem_campo("senha")  # espera o campo aparecer
                 # Host conferido logo antes de digitar: a aba pode ter mudado durante a espera.
                 hosts = credenciais.CREDENCIAIS[valor]["hosts"]
                 if pagina.host() not in hosts:

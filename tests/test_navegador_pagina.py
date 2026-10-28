@@ -47,3 +47,10 @@ def test_nome_vindo_de_filho_ou_labelledby_e_arriscado(pagina):
     pagina.set_content('<button><img alt="Excluir"></button>')
     assert nj.e_arriscado(nj.textos_do_elemento(nj.achar_elemento(pagina, "Excluir")))
     assert {"tipo": "botao", "rotulo": "Excluir"} in nj.extrair_pagina(pagina)["elementos"]
+
+
+def test_filho_de_botao_ou_link_reporta_nome_do_pai(pagina):
+    pagina.set_content('<button id="b1"><span>Salvar</span> <span>alterações</span></button>')
+    assert nj.e_arriscado(nj.textos_do_elemento(nj.achar_elemento(pagina, "alterações")))
+    pagina.set_content('<a href="#"><span>Excluir</span><em>item</em></a>')
+    assert nj.e_arriscado(nj.textos_do_elemento(nj.achar_elemento(pagina, "item")))
