@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict
 
 import navegador_jarvis as nj
 from actions._base import tool
+from login_receitas import RECEITAS, rodar_receita
 from sites import resolver_site
 
 AVISO_DASHBOARD = " Atenção: a rotina Sebrae grava esta planilha a cada 30 min; editar agora pode colidir."
@@ -103,6 +104,13 @@ def _abas(a):
     return _na_pagina(fazer)
 
 
+def _logar_site(a):
+    site = str(a.get("site", ""))
+    if site not in RECEITAS:
+        return {"erro": "Não tenho receita de login para esse site."}
+    return _na_pagina(lambda page: rodar_receita(site, nj.PaginaPlaywright(page)))
+
+
 ALVO = {"type": "string", "description": "Texto, rótulo ou seletor CSS do botão ou link (de ler_pagina)."}
 CAMPO = {"type": "string", "description": "Rótulo, placeholder ou seletor CSS do campo (de ler_pagina)."}
 TEXTO = {"type": "string", "description": "Texto a digitar."}
@@ -169,6 +177,15 @@ TOOLS = [
             "indice": {"type": "integer", "description": "Índice da aba (de listar). Padrão 0."},
         },
         ["acao"],
+        altera_dados=False,
+    ),
+    tool(
+        "logar_site",
+        "Entra num site do catálogo com a senha do Gerenciador de Credenciais (você nunca vê a senha). "
+        "MFA/PIN é do usuário: se vier aguardando_mfa, peça para aprovar e chame de novo.",
+        lambda c, a: _logar_site(a),
+        {"site": {"type": "string", "enum": list(RECEITAS)}},
+        ["site"],
         altera_dados=False,
     ),
 ]

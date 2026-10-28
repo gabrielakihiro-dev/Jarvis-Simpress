@@ -230,3 +230,44 @@ def extrair_pagina(page, limite: int = 5000, max_elementos: int = 60) -> Dict:
         "texto_pagina": texto[:limite],
         "elementos": page.evaluate(_JS_ELEMENTOS, max_elementos),
     }
+
+
+class PaginaPlaywright:
+    """Adaptador da `login_receitas.PaginaLogin` sobre uma page do Playwright. Espera até 5 s por elemento."""
+
+    CAMPOS = {"usuario": "input[type=email], input[name=loginfmt]", "senha": "input[type=password]"}
+
+    def __init__(self, page):
+        self.page = page
+
+    def host(self) -> str:
+        return host_de(self.page.url)
+
+    def ir(self, url: str) -> None:
+        self.page.goto(url, wait_until="domcontentloaded", timeout=15000)
+
+    def clicar_texto(self, texto: str) -> bool:
+        from playwright.sync_api import TimeoutError as Demorou
+
+        p = self.page
+        alvo = p.get_by_role("button", name=texto, exact=True).or_(
+            p.get_by_role("link", name=texto, exact=True)).or_(p.get_by_text(texto, exact=True))
+        try:
+            alvo.first.click(timeout=5000)
+            return True
+        except Demorou:
+            return False
+
+    def tem_campo(self, tipo: str) -> bool:
+        from playwright.sync_api import TimeoutError as Demorou
+
+        try:
+            self.page.locator(self.CAMPOS[tipo]).first.wait_for(state="visible", timeout=5000)
+            return True
+        except Demorou:
+            return False
+
+    def preencher(self, tipo: str, valor: str) -> None:
+        campo = self.page.locator(self.CAMPOS[tipo]).first
+        campo.fill(valor, timeout=5000)
+        campo.press("Enter")
