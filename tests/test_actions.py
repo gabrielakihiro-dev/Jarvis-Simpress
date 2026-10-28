@@ -12,10 +12,12 @@ NOMES_ESPERADOS = {
     "abrir", "executar_automacao_chrome", "cancelar_automacao_chrome", "atualizar_apelido", "atualizar_usuario",
     "salvar_unidade", "decidir_pendencia_usuario",
     "listar_divergencias_localidade", "consultar_divergencia_localidade", "listar_secao_comparacao",
+    "navegar", "ler_pagina", "clicar", "clicar_confirmado", "digitar", "digitar_confirmado", "abas",
 }
 MUTADORAS_ESPERADAS = {
     "executar_automacao_chrome", "cancelar_automacao_chrome", "atualizar_apelido",
     "atualizar_usuario", "decidir_pendencia_usuario", "salvar_unidade",
+    "clicar_confirmado", "digitar_confirmado",
 }
 
 
