@@ -174,3 +174,15 @@ def test_palavra_na_fila_do_vosk_nao_acorda_nem_cancela_com_mudo(escuta):
 def test_caminho_do_modelo_de_voz_sem_acento():
     curto = caminho_curto(MODELO_VOZ)
     assert curto.isascii() and Path(curto).is_dir()
+
+
+def test_ganho_automatico_sobe_com_voz_fraca_e_ignora_chiado():
+    from ui.escuta import ControleGanho
+    fraco = array("h", [330] * 800).tobytes()  # pico ~0,01
+    c = ControleGanho()
+    for _ in range(60):
+        saida = c.aplicar(fraco, pico(fraco))
+    assert 5 < c.ganho <= 10 and pico(saida) > 0.05
+    chiado = array("h", [100] * 800).tobytes()  # pico ~0,003, abaixo do piso
+    c2 = ControleGanho()
+    assert c2.aplicar(chiado, pico(chiado)) == chiado and c2.ganho == 1.0

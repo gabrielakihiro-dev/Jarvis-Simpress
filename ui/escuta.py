@@ -69,6 +69,36 @@ def suavizar_nivel(anterior: float, p: float) -> float:
     return anterior + (alvo - anterior) * (0.6 if alvo > anterior else 0.15)
 
 
+class ControleGanho:
+    """Ganho automático para microfone fraco: puxa a fala para pico ~0,3, de 1x até `maximo`.
+
+    Sobe devagar e só com voz (acima de `piso`, para não amplificar chiado); cai rápido se o som estoura.
+    """
+
+    ALVO = 0.3
+    PISO = 0.008
+
+    def __init__(self, maximo: float = 10.0):
+        self.maximo = maximo
+        self.ganho = 1.0
+
+    def aplicar(self, bloco: bytes, p: float) -> bytes:
+        if p > self.PISO:
+            alvo = min(self.maximo, max(1.0, self.ALVO / p))
+            self.ganho += (alvo - self.ganho) * (0.5 if alvo < self.ganho else 0.1)
+        if self.ganho <= 1.01:
+            return bloco
+        g = self.ganho
+        return array("h", (max(-32768, min(32767, int(v * g))) for v in array("h", bloco))).tobytes()
+
+
+def ganho_maximo_do_ambiente() -> float:
+    try:
+        return max(1.0, float(os.environ.get("JARVIS_GANHO_MAX") or 10.0))
+    except ValueError:
+        return 10.0
+
+
 def wav(pcm: bytes) -> bytes:
     bio = io.BytesIO()
     with wave.open(bio, "wb") as w:
@@ -207,6 +237,7 @@ class Escuta(QObject):
         self._wake: Optional[PalavraChaveWorker] = None
         self._wake_ok = False  # "Hey Jarvis" carregou: o nome pelo Vosk (plano B) fica de fora para não chamar duas vezes
         self._nivel = 0.0
+        self._agc = ControleGanho(ganho_maximo_do_ambiente())
         self.mudo = False  # só em memória: ao abrir o Jarvis o microfone volta ligado
 
     @property
@@ -404,6 +435,7 @@ class Escuta(QObject):
         p = pico(bloco)
         self._nivel = suavizar_nivel(self._nivel, p)
         self.nivel.emit(self._nivel)
+        bloco = self._agc.aplicar(bloco, p)  # p segue o som cru: nível da tela e corte de silêncio não mudam
         if self._gravando:
             self._buf += bloco
             fim = self._corte.alimentar(p)

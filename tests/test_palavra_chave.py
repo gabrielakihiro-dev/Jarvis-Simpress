@@ -66,11 +66,11 @@ def test_limpar_zera_resto_repouso_e_modelo():
 
 def test_limiar_do_ambiente(monkeypatch):
     monkeypatch.delenv("JARVIS_WAKE_LIMIAR", raising=False)
-    assert limiar_do_ambiente() == 0.5
+    assert limiar_do_ambiente() == 0.4
     monkeypatch.setenv("JARVIS_WAKE_LIMIAR", "0.7")
     assert limiar_do_ambiente() == 0.7
     monkeypatch.setenv("JARVIS_WAKE_LIMIAR", "alto")
-    assert limiar_do_ambiente() == 0.5
+    assert limiar_do_ambiente() == 0.4
 
 
 def test_worker_plano_b_quando_o_modelo_falta():

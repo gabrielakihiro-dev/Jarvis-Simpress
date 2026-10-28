@@ -15,7 +15,7 @@ QUADRO = 1280                 # amostras por quadro do modelo (80 ms a 16 kHz)
 QUADRO_BYTES = QUADRO * 2
 QUADRO_MS = 80
 MODELO = "hey_jarvis"
-LIMIAR_PADRAO = 0.5
+LIMIAR_PADRAO = 0.4           # padrão do openwakeword é 0.5; menor = mais sensível (e mais falso alarme)
 REPOUSO_MS = 2000             # depois de disparar, não dispara de novo (a mesma fala ainda ecoa no modelo)
 
 
