@@ -7,6 +7,7 @@ de qualquer ferramenta que altere dados.
 
 import base64
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -39,6 +40,8 @@ MODELOS_CATALOGO = {
 MAX_RODADAS = 5
 URL_MODELOS = "https://openrouter.ai/api/v1/models"
 
+_logger = logging.getLogger(__name__)
+
 
 def listar_modelos_ao_vivo(timeout: float = 6.0) -> List[Tuple[str, str]]:
     """Modelos do OpenRouter que aceitam ferramentas, como (slug, rótulo com preço). [] se a rede falhar."""
@@ -66,9 +69,15 @@ TIMEOUT_API = 60.0
 SYSTEM_PROMPT = """Você é o Jarvis, assistente oficial do parque de computadores Simpress.
 Você conversa com o usuário de forma amigável, direta, clara e profissional em português do Brasil.
 
+REGRA: PERGUNTA NÃO É ORDEM.
+Se o usuário só pergunta se você faz, sabe fazer ou consegue fazer algo (ex.: "você faz X?", "consegue X?", "como funciona X?"), responda em texto, explicando a capacidade, e NÃO chame nenhuma ferramenta que execute ou altere algo. Só execute uma ação (automação, importação, alteração) quando o usuário pedir explicitamente para fazer agora (ex.: "faça", "execute", "pode iniciar", "importa isso").
+
 Suas responsabilidades:
 1. Responder perguntas sobre equipamentos, chamados e ordens de serviço, unidades, transferências, relatórios, pendências de usuários, histórico de planilhas e automações, sempre com as ferramentas de consulta. Nunca adivinhe números ou séries.
-2. Executar automações com `executar_automacao_chrome` (pelo servidor Simpress):
+1a. Ao apresentar uma transferência, inclua o campo `hostname` (já vem em cada item de `listar_transferencias`) em uma linha logo abaixo da Série.
+1b. Divergência de localidade (`consultar_divergencia_localidade`/`consultar_historico_comparacao`) e transferência (`listar_transferencias`) são dados diferentes e não se equivalem. Nunca liste transferências como se fossem as divergências encontradas, nem presuma que toda série divergente tem transferência registrada. Para listar as séries divergentes, use a ferramenta de divergência de localidade/histórico de comparação. `listar_divergencias_localidade` já traz `transferencias_relacionadas` pronto (regra 1c); não chame `listar_transferencias` à parte para esse cruzamento.
+1c. Em `listar_divergencias_localidade`, a tela já mostra a tabela de divergências: não repita série/computador/local no texto, diga só o total (ex.: "Encontrei 6 localidades divergentes."). Quando vier `transferencias_relacionadas` (lista não vazia), apresente cada transferência em texto, logo após a frase do total: um bullet "•" por campo (Série, De, Para, Contato, Observação), todos no mesmo nível de indentação, com uma linha em branco entre uma transferência e a próxima. Se vier `aviso_transferencias`, informe esse aviso no texto. Para listas sem tabela própria (`listar_transferencias`, linha do tempo, histórico de automação), use o mesmo formato de bullet "•" por campo; nunca deixe um campo sem bullet enquanto os outros têm.
+2. Executar automações com `executar_automacao_chrome` (pelo servidor Simpress), só quando o usuário pedir explicitamente para rodar agora:
    - 'login': abre as abas do Oracle, UX Simpress e Endpoint Central para autenticação manual.
    - 'inventarios': Inventários (UX Simpress + Endpoint Central).
    - 'os': chamados e Ordens de Serviço (Oracle + UX Simpress).
@@ -121,8 +130,8 @@ class LLMClient:
         else:
             self.client = self._criar_cliente(api_key)
 
-        self.modelo_principal = os.environ.get("MODELO_PRINCIPAL", "deepseek/deepseek-v4.1-flash-1017")
-        self.modelo_fallback = os.environ.get("MODELO_FALLBACK", "google/gemini-2.5-flash")
+        self.modelo_principal = os.environ.get("MODELO_PRINCIPAL", "openai/gpt-4o-mini")
+        self.modelo_fallback = os.environ.get("MODELO_FALLBACK", "google/gemini-2.5-flash-lite")
         self.routing_sort = os.environ.get("ROUTING_SORT", "throughput")
 
         self.mensagens: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -195,6 +204,10 @@ class LLMClient:
         }
 
     def _msg_tool(self, tool_call_id: str, nome: str, resultado: Dict[str, Any]) -> Dict[str, Any]:
+        if nome == "listar_divergencias_localidade" and isinstance(resultado, dict) and "itens" in resultado:
+            # A tela já mostra os itens em tabela (ui/cartoes.py); o modelo só recebe o total,
+            # para não ter como repetir série/computador/local no texto (regra 1c do prompt).
+            resultado = {k: v for k, v in resultado.items() if k != "itens"}
         # O que vai ao modelo passa pela máscara; os dados reais ficam só aqui.
         conteudo = json.dumps(self.mascara.mascarar(resultado), ensure_ascii=False)
         if len(conteudo) > MAX_CARACTERES_RESPOSTA:
@@ -232,6 +245,10 @@ class LLMClient:
             except Exception as e:
                 del self.mensagens[checkpoint:]
                 return Resposta(texto=f"Erro na chamada da API OpenRouter ({self.modelo_principal}): {e}", ferramentas=ferramentas)
+
+            modelo_usado = getattr(resposta, "model", "") or ""
+            if modelo_usado and modelo_usado != self.modelo_principal:
+                _logger.warning("Fallback de modelo: respondeu %s em vez de %s", modelo_usado, self.modelo_principal)
 
             msg = resposta.choices[0].message
             if not msg.tool_calls:

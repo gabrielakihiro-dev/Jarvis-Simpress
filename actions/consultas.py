@@ -89,6 +89,17 @@ TOOLS = [
     ),
     tool("listar_transferencias", "Histórico de transferências de equipamentos.", lambda c, a: c.listar_transferencias()),
     tool(
+        "listar_divergencias_localidade",
+        "Lista todas as séries da seção 'Localidade divergente' do último cruzamento de planilhas (local cadastrado na Simpress diferente do previsto pela série).",
+        lambda c, a: c.listar_divergencias_localidade(),
+    ),
+    tool(
+        "consultar_divergencia_localidade",
+        "Verifica se uma série aparece na seção 'Localidade divergente' do último cruzamento de planilhas (local cadastrado na Simpress diferente do previsto pela série).",
+        lambda c, a: c.consultar_divergencia_localidade(str(a.get("serial", ""))),
+        {"serial": SERIAL}, ["serial"],
+    ),
+    tool(
         "listar_pendencias_usuarios",
         "Pendências de usuários logados aguardando decisão (permitir, recusar, remover ou manter).",
         lambda c, a: c.listar_pendencias_usuarios(),

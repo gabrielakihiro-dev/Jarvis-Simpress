@@ -1,8 +1,10 @@
 @echo off
 rem Abre o servidor do Simpress, espera ele responder e abre o Jarvis.
+rem Os cmds do servidor e do Jarvis ficam ocultos (sem janela, sem icone na barra).
 rem   iniciar_tudo.bat           abre tudo agora
 rem   iniciar_tudo.bat instalar  abre tudo ao entrar no Windows (atalho na pasta Inicializar)
 rem   iniciar_tudo.bat remover   desfaz o "instalar"
+rem   fechar_tudo.bat            fecha o servidor do Simpress e o Jarvis
 set "ATALHO=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Iniciar Simpress e Jarvis.lnk"
 set "SIMPRESS=%~dp0..\Simpress\iniciar_servidor.bat"
 
@@ -14,14 +16,14 @@ if not exist "%SIMPRESS%" (
     pause
     exit /b 1
 )
-start "Simpress" /min "%SIMPRESS%"
+wscript "%~dp0executar_oculto.vbs" "%SIMPRESS%"
 rem Espera o Simpress responder (ate ~2 min) antes de abrir o Jarvis
 for /l %%i in (1,1,60) do (
     curl -s -o nul http://127.0.0.1:8000/ && goto pronto
     timeout /t 2 /nobreak >nul
 )
 :pronto
-start "Jarvis" "%~dp0iniciar_jarvis.bat"
+wscript "%~dp0executar_oculto.vbs" "%~dp0iniciar_jarvis.bat"
 exit /b 0
 
 :instalar

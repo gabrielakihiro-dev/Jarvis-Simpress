@@ -11,6 +11,7 @@ NOMES_ESPERADOS = {
     "exportar_planilha", "abrir_importacao", "listar_transferencias", "listar_pendencias_usuarios",
     "executar_automacao_chrome", "cancelar_automacao_chrome", "atualizar_apelido", "atualizar_usuario",
     "salvar_unidade", "decidir_pendencia_usuario",
+    "listar_divergencias_localidade", "consultar_divergencia_localidade",
 }
 MUTADORAS_ESPERADAS = {
     "executar_automacao_chrome", "cancelar_automacao_chrome", "atualizar_apelido",

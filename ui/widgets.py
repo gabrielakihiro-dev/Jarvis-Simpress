@@ -170,21 +170,18 @@ def botao(texto: str, papel: str = "", dica: str = "", nome: str = "") -> QPushB
 
 
 def renderizar(texto: str) -> str:
-    """Markdown mínimo → HTML que o QTextBrowser entende. O texto é escapado antes."""
-    linhas, aberta, saida = html.escape(texto).split("\n"), False, []
+    """Markdown mínimo → HTML que o QTextBrowser entende. O texto é escapado antes.
+
+    Sem <ul>/<li>: o Qt ignora margin/padding de lista e aplica um recuo próprio
+    grande, jogando o marcador pro meio da tela em vez do início.
+    """
+    linhas, saida = html.escape(texto).split("\n"), []
     for linha in linhas:
-        item = re.match(r"^\s*(?:[-*•]|\d+[.)])\s+(.*)$", linha)
-        if item and not aberta:
-            saida.append("<ul>")
-            aberta = True
-        if not item and aberta:
-            saida.append("</ul>")
-            aberta = False
-        conteudo = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", item.group(1) if item else linha)
+        item = re.match(r"^\s*([-*•]|\d+[.)])\s+(.*)$", linha)
+        prefixo, conteudo = (item.group(1) + " ", item.group(2)) if item else ("", linha)
+        conteudo = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", conteudo)
         conteudo = re.sub(r"`([^`]+)`", rf"<code style='color:{theme.CYAN}'>\1</code>", conteudo)
-        saida.append(f"<li>{conteudo}</li>" if item else (conteudo + "<br>" if conteudo else "<br>"))
-    if aberta:
-        saida.append("</ul>")
+        saida.append(prefixo + conteudo + "<br>" if (prefixo or conteudo) else "<br>")
     return "".join(saida)
 
 

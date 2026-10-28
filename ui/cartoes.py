@@ -14,6 +14,7 @@ TABELAS = {
     "listar_unidades": ("unidades", [("Cidade", "cidade"), ("Endereço", "endereco"), ("CEP", "cep"), ("CNPJ", "cnpj")], "total"),
     "pesquisar_catalogo": ("itens", [("Série", "serial"), ("Modelo", "modelo"), ("Apelido", "apelido"), ("Cidade", "cidade"), ("Usuário", "usuario_logado")], "total_encontrados"),
     "listar_pendencias_usuarios": ("dados.pendencias", [("Série", "serie"), ("Computador", "computador"), ("Tipo", "tipo"), ("Usuário atual", "usuario_atual")], ""),
+    "listar_divergencias_localidade": ("itens", [("Série", "serie"), ("Computador", "computador"), ("Local Previsto", "local_previsto"), ("Local na Simpress", "local_na_simpress")], "total"),
 }
 FICHA = {"consultar_equipamento": ("equipamento", [("Série", "serial"), ("Modelo", "modelo"), ("Tipo", "tipo"), ("Apelido", "apelido"),
                                                    ("Cidade", "cidade"), ("UF", "uf"), ("Usuário", "usuario_logado"), ("Contrato", "contrato")])}
