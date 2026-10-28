@@ -33,6 +33,7 @@ CHAVES_SENSIVEIS = frozenset({
 # Textos livres (escritos por pessoas) onde um nome conhecido pode aparecer no meio da frase.
 CHAVES_TEXTO_LIVRE = frozenset({
     "anotacao", "descricao", "observacao", "motivo", "detalhes", "comentario", "mensagem", "erro",
+    "texto_pagina", "rotulo", "titulo",
 })
 SEM_USUARIO = "Sem usuário registrado"
 MIN_NOME_BASE = 3

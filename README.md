@@ -62,10 +62,18 @@ Cada ferramenta é um arquivo em `actions/` (um item `TOOL` ou lista `TOOLS` com
 
 Leituras são livres. Alterações **sempre** mostram um cartão "Confirmar e executar / Cancelar" com texto montado pelo programa (nunca pela IA); no máximo uma alteração por turno.
 
-Alteram dados (exigem confirmação): atualizar apelido, atualizar usuário, executar automação, cancelar automação, decidir pendência, salvar unidade (editar ou criar).
+Alteram dados (exigem confirmação): atualizar apelido, atualizar usuário, executar automação, cancelar automação, decidir pendência, salvar unidade (editar ou criar), clicar_confirmado e digitar_confirmado no navegador.
 Não viram ferramenta (use o Simpress no navegador): restauração, exclusões, salvar equipamento, agendamento Sebrae.
 
-O Jarvis não se conecta ao Chrome de automação (porta 9333); rotinas rodam pelo servidor.
+O Jarvis não se conecta ao Chrome de automação (porta 9333); rotinas rodam pelo servidor. Os sites usam o Chrome do Jarvis (seção abaixo).
+
+## Abrir e usar sites
+
+- **Abrir (`abrir`):** sites do catálogo (YouTube, Endpoint Central, UX Simpress, Dashboard, SoftExpert; ver `sites.py`), qualquer URL http/https e programas do Menu Iniciar, vários de uma vez. Sites abrem no **Chrome do Jarvis**; o navegador padrão só é usado se o Chrome do Jarvis não puder subir.
+- **Chrome do Jarvis:** Chrome visível com perfil próprio (`%LOCALAPPDATA%\JarvisChrome`) e CDP em 127.0.0.1, porta 9334 (`JARVIS_CHROME_PORTA`). É separado do Chrome do Simpress (9333).
+- **Ferramentas de navegador:** navegar, ler_pagina, clicar, clicar_confirmado, digitar, digitar_confirmado, abas e logar_site.
+- **Cartão de confirmação:** cliques de risco (enviar, salvar, excluir…) e digitação no SharePoint pedem o cartão. O cartão do Dashboard avisa que a rotina do Sebrae grava essa planilha a cada 30 min. `digitar` com Enter (busca) roda sem cartão fora do SharePoint: Enter num formulário pode enviá-lo.
+- **Senhas:** ⚙ › Credenciais… guarda no Gerenciador de Credenciais do Windows (`Jarvis/<id>`). Senha nunca vai por chat ou voz e só é digitada nos sites permitidos. MFA e PIN são sempre seus. `logar_site` funciona para Dashboard e SoftExpert; as receitas do UX Simpress e do Endpoint Central ainda faltam (serão mapeadas ao vivo com você).
 
 ## Privacidade (LGPD)
 
@@ -73,7 +81,9 @@ Usuário logado, apelido, nomes, e-mails e telefones viram tokens `[PESSOA_n]` a
 
 ## Variáveis de ambiente
 
-`OPENROUTER_API_KEY`, `MODELO_PRINCIPAL`, `SIMPRESS_URL`, `SIMPRESS_DIR`, `JARVIS_REDUZIR_MOVIMENTO`, `JARVIS_ESCUTA`, `JARVIS_WAKE_LIMIAR` (ver `.env.example`).
+`OPENROUTER_API_KEY`, `MODELO_PRINCIPAL`, `SIMPRESS_URL`, `SIMPRESS_DIR`, `JARVIS_REDUZIR_MOVIMENTO`, `JARVIS_ESCUTA`, `JARVIS_WAKE_LIMIAR`, `JARVIS_CHROME_PORTA` (padrão 9334; 9333, do Chrome do Simpress, é recusada) (ver `.env.example`).
+
+Pacotes novos: `playwright` e `keyring`. O `iniciar_jarvis.bat` instala; para rodar manualmente use `pip install -r requirements.txt`.
 
 ## Testes
 

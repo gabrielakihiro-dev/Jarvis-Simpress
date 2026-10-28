@@ -24,6 +24,7 @@ from llm_client import LLMClient
 from simpress_client import SimpressClient
 from ui import theme
 from ui.chat_panel import ChatPanel
+from ui.credenciais import JanelaCredenciais
 from ui.widgets import MEDIDOR_DISPONIVEL, IndicadorStatus, MedidorSistema, botao
 
 LARGURA_COMPACTA = 1100
@@ -210,6 +211,7 @@ class JarvisShell(QMainWindow):
         menu.addSeparator()
         menu.addAction("Abrir Simpress no navegador", lambda: QDesktopServices.openUrl(QUrl(self.simpress.base_url)))
         menu.addAction("Importar planilhas…", self.chat.importar)
+        menu.addAction("Credenciais…", self._abrir_credenciais)
         menu.addAction("Nova conversa", self.chat.limpar)
         menu.addSeparator()
         self.acao_escuta = QAction("Escuta ativa (“Hey Jarvis”)", menu)
@@ -221,6 +223,9 @@ class JarvisShell(QMainWindow):
         btn_menu.setMenu(menu)
         lay.addWidget(btn_menu)
         return topo
+
+    def _abrir_credenciais(self) -> None:
+        JanelaCredenciais(self).exec()
 
     def _criar_trilho(self) -> QFrame:
         """Trilho da esquerda: orbe grande e, embaixo, os cartões de status."""

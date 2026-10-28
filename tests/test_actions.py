@@ -9,13 +9,16 @@ NOMES_ESPERADOS = {
     "listar_pendencias_operacionais", "linha_do_tempo_chamados", "obter_relatorio_mensal",
     "listar_historico_automacao", "resumo_sebrae", "consultar_historico_comparacao", "listar_unidades",
     "exportar_planilha", "abrir_importacao", "listar_transferencias", "listar_pendencias_usuarios",
-    "executar_automacao_chrome", "cancelar_automacao_chrome", "atualizar_apelido", "atualizar_usuario",
+    "abrir", "executar_automacao_chrome", "cancelar_automacao_chrome", "atualizar_apelido", "atualizar_usuario",
     "salvar_unidade", "decidir_pendencia_usuario",
     "listar_divergencias_localidade", "consultar_divergencia_localidade", "listar_secao_comparacao",
+    "navegar", "ler_pagina", "clicar", "clicar_confirmado", "digitar", "digitar_confirmado", "abas",
+    "logar_site",
 }
 MUTADORAS_ESPERADAS = {
     "executar_automacao_chrome", "cancelar_automacao_chrome", "atualizar_apelido",
     "atualizar_usuario", "decidir_pendencia_usuario", "salvar_unidade",
+    "clicar_confirmado", "digitar_confirmado",
 }
 
 
