@@ -1,12 +1,6 @@
-import os
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-from PyQt6.QtWidgets import QApplication, QLineEdit, QPushButton
+from PyQt6.QtWidgets import QLineEdit, QPushButton
 
 from ui.credenciais import JanelaCredenciais
-
-app = QApplication.instance() or QApplication([])
 
 
 def janela(tem_inicial=False):
@@ -54,3 +48,28 @@ def test_apagar():
     botao(j, "Apagar").click()
     assert chamadas == [("apagar", "microsoft-simpress")]
     assert "não salva" in j.estado_texto("microsoft-simpress")
+
+
+def _erro(*a):
+    raise RuntimeError("falha com segredo123")
+
+
+def test_salvar_com_erro_nao_quebra_nem_vaza_senha():
+    j = JanelaCredenciais(salvar=_erro, tem=lambda i: False, apagar=lambda i: None)
+    j.findChild(QLineEdit).setText("segredo123")
+    botao(j, "Salvar").click()
+    t = j.estado_texto("microsoft-simpress")
+    assert "indisponível" in t and "segredo123" not in t and t != "salva"
+
+
+def test_apagar_com_erro_nao_quebra():
+    j = JanelaCredenciais(salvar=lambda i, s: None, tem=lambda i: True, apagar=_erro)
+    botao(j, "Apagar").click()
+    t = j.estado_texto("microsoft-simpress")
+    assert "indisponível" in t and t != "salva"
+
+
+def test_tem_com_erro_na_construcao():
+    j = JanelaCredenciais(salvar=lambda i, s: None, tem=_erro, apagar=lambda i: None)
+    t = j.estado_texto("microsoft-simpress")
+    assert "indisponível" in t and t != "salva"

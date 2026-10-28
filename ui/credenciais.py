@@ -42,17 +42,29 @@ class JanelaCredenciais(QDialog):
         return self._estados[cid].text()
 
     def _atualizar(self, cid: str, msg: str = "") -> None:
-        self._estados[cid].setText(msg or ("salva" if self._tem(cid) else "não salva"))
+        if not msg:
+            try:
+                msg = "salva" if self._tem(cid) else "não salva"
+            except Exception:
+                msg = "Cofre de senhas indisponível"
+        self._estados[cid].setText(msg)
+
+    def _seguro(self, cid: str, fn) -> None:
+        # Erro do keyring vira mensagem fixa na linha: nunca str(e), que poderia carregar a senha.
+        try:
+            fn()
+        except Exception:
+            self._atualizar(cid, "Cofre de senhas indisponível")
+        else:
+            self._atualizar(cid)
 
     def _clicar_salvar(self, cid: str) -> None:
         senha = self._campos[cid].text()
         if not senha:
             self._atualizar(cid, "Digite a senha antes de salvar")
             return
-        self._salvar(cid, senha)
+        self._seguro(cid, lambda: self._salvar(cid, senha))
         self._campos[cid].clear()
-        self._atualizar(cid)
 
     def _clicar_apagar(self, cid: str) -> None:
-        self._apagar(cid)
-        self._atualizar(cid)
+        self._seguro(cid, lambda: self._apagar(cid))
