@@ -37,6 +37,46 @@ MAX_CARACTERES_RESPOSTA = 6000
 # shortcut: acima de 20.000 equipamentos com usuário a lista fica parcial; aumentar se a base crescer.
 MAX_PAGINAS_NOMES = 200
 
+# Seções do último cruzamento de planilhas expostas por listar_secao_comparacao().
+# Chave = valor aceito pela ferramenta; valor = campos brutos em comparacao (histórico).
+# "correspondencias_ambiguas" soma dois campos porque a tela reclassifica duplicidades de
+# série de "correspondencias_ambiguas" para "registros_ambiguos" (ver comparison_history_for_display).
+_SECOES_COMPARACAO = {
+    "correspondencias_ambiguas": ("correspondencias_ambiguas", "registros_ambiguos"),
+    "series_sem_mapeamento": ("series_sem_mapeamento",),
+    "apelidos_atualizados": ("apelidos_atualizados",),
+    "divergencias_apelidos_manuais": ("divergencias_apelidos_manuais",),
+    "mudancas_usuarios": ("mudancas_usuarios",),
+}
+# Rótulos aprovados (ver "Rótulos do Histórico de Planilhas" no AGENTS.md):
+# EquipamentosDetalhes = "na Simpress", InvAll = "no Endpoint".
+_ROTULOS_SECAO = {
+    "apelido_equipamentos_detalhes": "apelido_na_simpress",
+    "apelido_invall": "apelido_no_endpoint",
+    "detalhes_encontrado": "encontrado_na_simpress",
+    "invall_encontrado": "encontrado_no_endpoint",
+    "diverge_detalhes": "diverge_na_simpress",
+    "diverge_invall": "diverge_no_endpoint",
+}
+
+
+def _rotular_item(dados: Any) -> Any:
+    """Aplica os rótulos aprovados e descarta ids/anotações internas vazias."""
+    if isinstance(dados, dict):
+        resultado: Dict[str, Any] = {}
+        for k, v in dados.items():
+            if k == "anotacao_id":
+                continue
+            if k == "anotacao" and not v:
+                continue
+            if k == "arquivos_origem" and isinstance(v, dict):
+                v = {("na simpress" if kk == "detalhes" else kk): vv for kk, vv in v.items()}
+            resultado[_ROTULOS_SECAO.get(k, k)] = _rotular_item(v)
+        return resultado
+    if isinstance(dados, list):
+        return [_rotular_item(v) for v in dados]
+    return dados
+
 
 def sanitizar_equipamento(equip: Dict[str, Any]) -> Dict[str, Any]:
     """Remove endereços detalhados e mantém apenas Cidade/UF e informações da máquina."""
@@ -457,6 +497,40 @@ class SimpressClient:
             "local_previsto": item.get("local_previsto", ""),
             "local_na_simpress": item.get("local_detalhes", ""),
             "horario_comparacao": eventos[0].get("horario", ""),
+        }
+
+    def listar_secao_comparacao(self, secao: str) -> Dict[str, Any]:
+        """Lista os itens de uma seção do último cruzamento de planilhas (ver _SECOES_COMPARACAO)."""
+        campos = _SECOES_COMPARACAO.get(secao)
+        if campos is None:
+            return {"erro": f"Seção desconhecida: {secao}"}
+        ok, dados = self._chamar("GET", "/api/historico-comparacoes")
+        if not ok:
+            return {"erro": dados}
+        eventos = dados.get("eventos", [])
+        if not eventos:
+            return {"mensagem": "Nenhum histórico de comparação registrado até o momento."}
+        evento_id = eventos[0].get("id")
+        ok, detalhe = self._chamar("GET", f"/api/historico-comparacoes/{evento_id}")
+        if not ok:
+            return {"erro": detalhe}
+        evento_detalhe = detalhe.get("evento") or {}
+        comparacao = evento_detalhe.get("comparacao") or {}
+        itens: List[Any] = []
+        for campo in campos:
+            itens.extend(comparacao.get(campo) or [])
+        total = len(itens)
+        if secao == "correspondencias_ambiguas":
+            # O painel mostra o total salvo no resumo da comparação (antes da reclassificação
+            # de duplicidades); usa-se esse número para bater com o que o usuário vê na tela.
+            total_resumo = (evento_detalhe.get("resumo") or {}).get("correspondencias_ambiguas")
+            if isinstance(total_resumo, int):
+                total = total_resumo
+        return {
+            "secao": secao,
+            "total": total,
+            "horario_comparacao": eventos[0].get("horario", ""),
+            "itens": _aparar(_rotular_item(itens)),
         }
 
     def listar_unidades(self) -> Dict[str, Any]:

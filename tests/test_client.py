@@ -253,3 +253,33 @@ def test_divergencias_localidade_avisa_se_transferencias_falharem():
     res = cliente(handler).listar_divergencias_localidade()
     assert "transferencias_relacionadas" not in res
     assert "indisponível" in res["aviso_transferencias"] or "Não foi possível" in res["aviso_transferencias"]
+
+
+def test_rotular_item_aplica_rotulos_e_descarta_ids_internos():
+    item = {
+        "serie": "X1",
+        "apelido_equipamentos_detalhes": "PC-A",
+        "apelido_invall": "PC-B",
+        "detalhes_encontrado": True,
+        "invall_encontrado": True,
+        "diverge_detalhes": True,
+        "diverge_invall": False,
+        "arquivos_origem": {"detalhes": "Simpress_x.xlsx", "endpoint": "Endpoint_x.xlsx"},
+        "anotacao_id": "deve sumir",
+        "anotacao": "",
+    }
+    rotulado = simpress_client._rotular_item([item])[0]
+    assert rotulado["apelido_na_simpress"] == "PC-A"
+    assert rotulado["apelido_no_endpoint"] == "PC-B"
+    assert rotulado["encontrado_na_simpress"] is True
+    assert rotulado["encontrado_no_endpoint"] is True
+    assert rotulado["diverge_na_simpress"] is True
+    assert rotulado["diverge_no_endpoint"] is False
+    assert rotulado["arquivos_origem"] == {"na simpress": "Simpress_x.xlsx", "endpoint": "Endpoint_x.xlsx"}
+    assert "anotacao_id" not in rotulado
+    assert "anotacao" not in rotulado
+
+
+def test_rotular_item_preserva_anotacao_preenchida():
+    rotulado = simpress_client._rotular_item([{"serie": "X1", "anotacao": "texto"}])[0]
+    assert rotulado["anotacao"] == "texto"

@@ -72,3 +72,38 @@ def test_mascara_contatos_de_transferencia():
     mascarado = m.mascarar(dados)
     assert "Ana" not in str(mascarado) and "Rui" not in str(mascarado)
     assert m.restaurar(mascarado) == dados
+
+
+def test_mascara_campos_de_mudanca_de_usuario_e_apelido():
+    m = Mascara()
+    dados = {
+        "serie": "X1",
+        "usuario_anterior": "asoliveira", "usuario_novo": "",
+        "nome_pessoa_anterior": "Andre Oliveira", "nome_pessoa_novo": "",
+        "apelido_manual": "PC Diretoria", "apelido_anterior": "PC1", "apelido_novo": "PC2",
+        "apelido_na_simpress": "PC3", "apelido_no_endpoint": "PC4",
+        "motivo": "O Endpoint deixou de informar o usuário asoliveira.",
+    }
+    mascarado = m.mascarar(dados)
+    texto = str(mascarado)
+    for valor in ("asoliveira", "Andre Oliveira", "PC Diretoria", "PC1", "PC2", "PC3", "PC4"):
+        assert valor not in texto
+    # o nome já conhecido some também do texto livre (motivo)
+    assert "asoliveira" not in mascarado["motivo"]
+    assert m.restaurar(mascarado) == dados
+
+
+def test_mascara_campos_brutos_do_historico_de_comparacao():
+    # chaves cruas (pré-rótulo) usadas por consultar_historico_comparacao, que não passa por _rotular_item.
+    m = Mascara()
+    dados = {
+        "serie": "X1",
+        "apelido_equipamentos_detalhes": "PRNOTETI096",
+        "apelido_invall": "PRNOTETI096",
+        "computador": "PRNOTETI096 - Backup Diretoria (M)",
+    }
+    mascarado = m.mascarar(dados)
+    texto = str(mascarado)
+    for valor in ("PRNOTETI096", "PRNOTETI096 - Backup Diretoria (M)"):
+        assert valor not in texto
+    assert m.restaurar(mascarado) == dados
