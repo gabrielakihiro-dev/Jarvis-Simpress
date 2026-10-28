@@ -9,6 +9,7 @@ Só o áudio gravado depois de chamar o Jarvis sai do computador (para a transcr
 
 import io
 import json
+import os
 import queue
 import time
 import wave
@@ -51,6 +52,15 @@ def para_mono_16k(dados: bytes, canais: int, taxa: int, flutuante: bool = False)
     if flutuante:
         a = array("h", (max(-32768, min(32767, int(v * 32767))) for v in a))
     return a.tobytes()
+
+
+def caminho_curto(p: Path) -> str:
+    """Nome curto 8.3 no Windows: o Vosk (Kaldi) não abre caminho com acento ("Área de Trabalho")."""
+    if os.name != "nt":
+        return str(p)
+    import ctypes
+    buf = ctypes.create_unicode_buffer(32768)
+    return buf.value if ctypes.windll.kernel32.GetShortPathNameW(str(p), buf, len(buf)) else str(p)
 
 
 def suavizar_nivel(anterior: float, p: float) -> float:
@@ -141,7 +151,7 @@ class VoskWorker(QThread):
         try:
             import vosk
             vosk.SetLogLevel(-1)
-            rec = vosk.KaldiRecognizer(vosk.Model(str(MODELO_VOZ)), TAXA, json.dumps(GRAMATICA, ensure_ascii=False))
+            rec = vosk.KaldiRecognizer(vosk.Model(caminho_curto(MODELO_VOZ)), TAXA, json.dumps(GRAMATICA, ensure_ascii=False))
         except Exception as e:
             self.falhou.emit(f"Vosk indisponível ({e})")
             return

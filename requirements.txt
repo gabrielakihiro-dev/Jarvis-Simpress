@@ -10,3 +10,4 @@ openwakeword>=0.6.0
 onnxruntime>=1.18
 playwright>=1.45
 keyring>=25
+truststore>=0.9

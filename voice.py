@@ -14,6 +14,13 @@ import time
 from typing import Optional
 
 try:
+    # Redes com inspeção de HTTPS: confia nos certificados do Windows, senão o edge-tts falha no SSL.
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
+try:
     import edge_tts
     TTS_DISPONIVEL = True
 except ImportError:

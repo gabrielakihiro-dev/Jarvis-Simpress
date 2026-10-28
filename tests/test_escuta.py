@@ -1,6 +1,7 @@
 from array import array
+from pathlib import Path
 
-from ui.escuta import Conversa, CorteSilencio, para_mono_16k, pico
+from ui.escuta import MODELO_VOZ, Conversa, CorteSilencio, caminho_curto, para_mono_16k, pico
 
 
 def sequencia(*partes):
@@ -168,3 +169,8 @@ def test_palavra_na_fila_do_vosk_nao_acorda_nem_cancela_com_mudo(escuta):
     escuta._pausas.add("fala")
     escuta._ouviu("cancelar")
     assert acordou == [] and cancelou == []
+
+
+def test_caminho_do_modelo_de_voz_sem_acento():
+    curto = caminho_curto(MODELO_VOZ)
+    assert curto.isascii() and Path(curto).is_dir()
