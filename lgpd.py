@@ -19,6 +19,13 @@ PHONE_PATTERN = re.compile(
     r")(?![\w-])"
 )
 TOKEN_PATTERN = re.compile(r"\[PESSOA_\d+\]")
+# CPF com pontuação sempre; 11 dígitos soltos só se os dígitos verificadores baterem (ver _cpf_valido).
+CPF_FORMATADO_PATTERN = re.compile(r"(?<!\d)\d{3}\.\d{3}\.\d{3}-\d{2}(?!\d)")
+CPF_SOLTO_PATTERN = re.compile(r"(?<![\w-])\d{11}(?![\w-])")
+# shortcut: só "rótulo: valor" / "rótulo=valor" (valor até o espaço); "senha é x" e valor com espaço passam.
+SENHA_PATTERN = re.compile(r"\b(senha|password|passwd)([ \t]*[:=][ \t]*)\S+", re.IGNORECASE)
+CPF_MASCARA = "***.***.***-**"
+DADO_OMITIDO = "[DADO SENSÍVEL OMITIDO]"
 
 # Chaves cujo valor identifica uma pessoa ou é escolhido por ela.
 CHAVES_SENSIVEIS = frozenset({
@@ -39,11 +46,24 @@ SEM_USUARIO = "Sem usuário registrado"
 MIN_NOME_BASE = 3
 
 
+def _cpf_valido(digitos: str) -> bool:
+    if len(set(digitos)) == 1:
+        return False
+    for tamanho in (9, 10):
+        soma = sum(int(d) * (tamanho + 1 - i) for i, d in enumerate(digitos[:tamanho]))
+        if int(digitos[tamanho]) != (soma * 10 % 11) % 10:
+            return False
+    return True
+
+
 def limpar_texto_sensivel(texto: Any) -> str:
-    """Remove e-mails e telefones de textos livres."""
+    """Remove senhas, CPFs, e-mails e telefones de textos livres (CPF antes do telefone)."""
     if not texto:
         return ""
-    limpo = EMAIL_PATTERN.sub("[E-MAIL OCULTADO]", str(texto))
+    limpo = SENHA_PATTERN.sub(lambda m: f"{m.group(1)}{m.group(2)}{DADO_OMITIDO}", str(texto))
+    limpo = CPF_FORMATADO_PATTERN.sub(CPF_MASCARA, limpo)
+    limpo = CPF_SOLTO_PATTERN.sub(lambda m: CPF_MASCARA if _cpf_valido(m.group(0)) else m.group(0), limpo)
+    limpo = EMAIL_PATTERN.sub("[E-MAIL OCULTADO]", limpo)
     return PHONE_PATTERN.sub("[TELEFONE OCULTADO]", limpo).strip()
 
 

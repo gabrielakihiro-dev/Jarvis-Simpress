@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import httpx
 from openai import OpenAI
 
-from lgpd import TOKEN_PATTERN, Mascara
+from lgpd import TOKEN_PATTERN, Mascara, limpar_texto_sensivel
 from simpress_client import MAX_CARACTERES_RESPOSTA, SimpressClient
 from voice import resumo_para_fala
 from tools.simpress_tools import (
@@ -349,7 +349,7 @@ class LLMClient:
 
         self._carregar_nomes_base()
         checkpoint = len(self.mensagens)
-        self.mensagens.append({"role": "user", "content": self.mascara.ocultar_conhecidos(texto_usuario)})
+        self.mensagens.append({"role": "user", "content": self.mascara.ocultar_conhecidos(limpar_texto_sensivel(texto_usuario))})
         self._dados = []
         resposta = self._rodar(checkpoint, [], callback_status)
         resposta.dados = self._dados

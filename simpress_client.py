@@ -36,6 +36,9 @@ MAX_CARACTERES_RESPOSTA = 6000
 # Teto de páginas (100 itens cada) ao carregar os nomes da base para a máscara.
 # shortcut: acima de 20.000 equipamentos com usuário a lista fica parcial; aumentar se a base crescer.
 MAX_PAGINAS_NOMES = 200
+# Leituras de chamados Sebrae e logs de rotina: cada texto vai à IA com no máximo este tamanho / nº de linhas.
+MAX_TEXTO_CHAMADO = 300
+MAX_LINHAS_LOG = 40
 
 # Seções do último cruzamento de planilhas expostas por listar_secao_comparacao().
 # Chave = valor aceito pela ferramenta; valor = campos brutos em comparacao (histórico).
@@ -672,3 +675,160 @@ class SimpressClient:
             f"/api/usuarios/pendencias/{pendencia_id}/decidir", {"decisao": decisao},
             f"Pendência {pendencia_id}: decisão '{decisao}' registrada.",
         )
+
+    # --- leituras: Sebrae novos, Entra, histórico de alterações, evolução e log de rotina ---
+
+    def chamados_novos_sebrae(self) -> Dict[str, Any]:
+        """Chamados novos do Sebrae lidos do SoftExpert. Só leitura: nada é gravado nem exportado."""
+        ok, dados = self._chamar("GET", "/api/sebrae/novos")
+        if not ok:
+            return {"erro": dados}
+        dados = dados if isinstance(dados, dict) else {}
+        importado = dados.get("importado") if isinstance(dados.get("importado"), dict) else None
+        novos = dados.get("novos")
+        if not isinstance(novos, dict):
+            return {"dashboard_importado": importado is not None,
+                    "mensagem": "Ainda não há leitura de chamados novos do Sebrae."}
+
+        def texto(valor: Any) -> str:
+            return limpar_texto_sensivel(valor)[:MAX_TEXTO_CHAMADO]
+
+        itens = []
+        for f in novos.get("formulario") or []:
+            if not isinstance(f, dict):
+                continue
+            linha = f.get("linha") if isinstance(f.get("linha"), dict) else {}
+            cruzamento = f.get("cruzamento") if isinstance(f.get("cruzamento"), dict) else {}
+            itens.append({
+                "numero": str(f.get("numero") or ""),
+                "data": str(linha.get("P") or ""),
+                "titulo": texto(linha.get("G")),
+                "descricao": texto(linha.get("H")),
+                "solicitante": texto(linha.get("I")),
+                "detalhes": texto(linha.get("F")),  # detalhes do atendimento realizado
+                "serie": str(linha.get("K") or ""),
+                "modelo": str(linha.get("L") or ""),
+                "cidade": str(linha.get("N") or ""),
+                "os": str(linha.get("E") or ""),
+                "cruzamento": str(cruzamento.get("status") or ""),
+                "candidatos": cruzamento.get("candidatos", 0),
+            })
+        pendentes = [p for p in novos.get("pendentes") or [] if isinstance(p, dict)]
+        erros = novos.get("erros") if isinstance(novos.get("erros"), dict) else {}
+        return _aparar({
+            "dashboard_importado": importado and {k: importado.get(k, "") for k in ("arquivo", "importado_em", "total")},
+            "lidos_em": novos.get("lidos_em", ""),
+            "ignorados": novos.get("ignorados", 0),
+            "total_novos": len(itens),
+            "chamados": [_aparar(i) for i in itens[:MAX_ITENS_LISTA]],
+            "omitidos": max(0, len(itens) - MAX_ITENS_LISTA),
+            "pendentes_total": len(pendentes),
+            "pendentes": [{"numero": str(p.get("numero") or ""), "motivo": str(p.get("motivo") or "")}
+                          for p in pendentes[:MAX_ITENS_LISTA]],
+            "erros": [{"numero": str(n), "erro": str(m)} for n, m in list(erros.items())[:MAX_ITENS_LISTA]],
+        })
+
+    def estado_usuarios_entra(self) -> Dict[str, Any]:
+        """Quando o CSV do Entra foi importado e quantos usuários ele trouxe (só contagens)."""
+        return self._leitura("/api/usuarios-entra/estado")
+
+    @staticmethod
+    def _limite(limite: Any, padrao: int) -> int:
+        try:
+            return max(1, min(int(limite), MAX_ITENS_LISTA))
+        except (TypeError, ValueError):
+            return padrao
+
+    def listar_historico_alteracoes(self, limite: Any = 10) -> Dict[str, Any]:
+        """Alterações recentes de apelido e de usuário logado, da mais nova para a mais antiga."""
+        ok, dados = self._chamar("GET", "/api/historico-alteracoes")
+        if not ok:
+            return {"erro": dados}
+        eventos = [e for e in (dados.get("eventos") if isinstance(dados, dict) else None) or [] if isinstance(e, dict)]
+        itens = []
+        for e in eventos[: self._limite(limite, 10)]:
+            item = {k: e[k] for k in (
+                "id", "tipo", "serial", "equipamento", "horario", "acao", "motivo", "origem",
+                "apelido_anterior", "apelido_novo", "usuario_anterior", "usuario_novo",
+                "nome_pessoa_anterior", "nome_pessoa_novo",
+            ) if e.get(k) not in (None, "")}
+            if e.get("valor_anterior"):
+                # aviso de perda no Endpoint: o valor é um usuário ou um hostname, conforme o motivo
+                item["usuario_anterior" if e.get("motivo") == "usuario_removido" else "apelido_anterior"] = e["valor_anterior"]
+            itens.append(item)
+        return {"total": len(eventos), "eventos": _aparar(itens)}
+
+    def listar_apelidos_modificados(self, limite: Any = MAX_ITENS_LISTA) -> Dict[str, Any]:
+        """Apelidos digitados à mão. O servidor manda {série: apelido}; vira lista para a máscara LGPD ver a chave 'apelido'."""
+        ok, dados = self._chamar("GET", "/api/equipamento/apelidos-modificados")
+        if not ok:
+            return {"erro": dados}
+        apelidos = dados.get("apelidos") if isinstance(dados, dict) else None
+        apelidos = apelidos if isinstance(apelidos, dict) else {}
+        corte = self._limite(limite, MAX_ITENS_LISTA)
+        itens = [{"serial": str(s), "apelido": str(a)} for s, a in apelidos.items()]
+        return {"total": len(itens), "itens": _aparar(itens[:corte]), "omitidos": max(0, len(itens) - corte)}
+
+    def evolucao_atualizacoes(self, anterior: str = "", atual: str = "") -> Dict[str, Any]:
+        """O que surgiu e o que foi resolvido entre duas atualizações de inventário (padrão: as duas mais recentes)."""
+        anterior, atual = str(anterior or "").strip(), str(atual or "").strip()
+        if bool(anterior) != bool(atual):
+            return {"erro": "Informe os dois identificadores (anterior e atual) ou nenhum."}
+        if "/" in anterior or "/" in atual:
+            return {"erro": "Identificador do histórico inválido."}
+        if not anterior:
+            ok, hist = self._chamar("GET", "/api/historico-comparacoes")
+            if not ok:
+                return {"erro": hist}
+            eventos = (hist.get("eventos") if isinstance(hist, dict) else None) or []
+            ids = [str(e["id"]) for e in eventos if isinstance(e, dict) and e.get("id") and e.get("tipo") != "restauracao"]
+            if len(ids) < 2:
+                return {"mensagem": "É preciso ter pelo menos duas atualizações no histórico para comparar."}
+            atual, anterior = ids[0], ids[1]
+        ok, dados = self._chamar("GET", "/api/operacoes/evolucao", params={"anterior": anterior, "atual": atual})
+        if not ok:
+            return {"erro": dados}
+        dados = dados if isinstance(dados, dict) else {}
+        mudancas = dados.get("mudancas") if isinstance(dados.get("mudancas"), dict) else {}
+        itens = []
+        for situacao, chave in (("novo", "novos"), ("resolvido", "resolvidos")):
+            for m in mudancas.get(chave) or []:
+                m = m if isinstance(m, dict) else {}
+                reg = m.get("item") if isinstance(m.get("item"), dict) else {}
+                itens.append({
+                    "situacao": situacao, "secao": m.get("secao", ""),
+                    "serie": reg.get("serie") or reg.get("serial") or "",
+                    "computador": reg.get("computador", ""), "motivo": reg.get("motivo", ""),
+                })
+        return {
+            "anterior": _aparar(dados.get("anterior", {})), "atual": _aparar(dados.get("atual", {})),
+            "contagens": dados.get("contagens", {}),
+            "total_itens": len(itens),
+            "itens": _aparar(itens[:MAX_ITENS_LISTA]),
+            "omitidos": max(0, len(itens) - MAX_ITENS_LISTA),
+        }
+
+    def log_execucao_automacao(self, execucao_id: str = "") -> Dict[str, Any]:
+        """Últimas linhas do log de uma rotina (padrão: a falha mais recente), sem e-mails e telefones."""
+        execucao_id = str(execucao_id or "").strip()
+        if "/" in execucao_id or "\\" in execucao_id:
+            return {"erro": "Identificador da execução inválido."}
+        if not execucao_id:
+            ok, hist = self._chamar("GET", "/api/automacao/historico", params={"limite": 1, "status": "falha"})
+            if not ok:
+                return {"erro": hist}
+            execucoes = hist.get("execucoes") if isinstance(hist, dict) else None
+            if not execucoes or not isinstance(execucoes[0], dict) or not execucoes[0].get("id"):
+                return {"mensagem": "Nenhuma rotina com falha no histórico recente."}
+            execucao_id = str(execucoes[0]["id"])
+        ok, dados = self._chamar("GET", f"/api/automacao/execucoes/{execucao_id}/log", params={"linhas": MAX_LINHAS_LOG})
+        if not ok:
+            return {"erro": dados}
+        dados = dados if isinstance(dados, dict) else {}
+        linhas = [limpar_texto_sensivel(linha)[:MAX_TEXTO_CHAMADO] for linha in (dados.get("linhas") or [])[-MAX_LINHAS_LOG:]]
+        execucao = dados.get("execucao") if isinstance(dados.get("execucao"), dict) else {}
+        return {
+            "execucao": _aparar({k: v for k, v in execucao.items() if k not in ("log", "capturas")}),
+            "detalhes": linhas,  # 'detalhes' é chave de texto livre da máscara LGPD: nomes já conhecidos viram marcador
+            "limitado": bool(dados.get("limitado")),
+        }

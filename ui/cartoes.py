@@ -15,6 +15,10 @@ TABELAS = {
     "pesquisar_catalogo": ("itens", [("Série", "serial"), ("Modelo", "modelo"), ("Apelido", "apelido"), ("Cidade", "cidade"), ("Usuário", "usuario_logado")], "total_encontrados"),
     "listar_pendencias_usuarios": ("dados.pendencias", [("Série", "serie"), ("Computador", "computador"), ("Tipo", "tipo"), ("Usuário atual", "usuario_atual")], ""),
     "listar_divergencias_localidade": ("itens", [("Série", "serie"), ("Computador", "computador"), ("Local Previsto", "local_previsto"), ("Local na Simpress", "local_na_simpress")], "total"),
+    "chamados_novos_sebrae": ("chamados", [("Chamado", "numero"), ("Título", "titulo"), ("Solicitante", "solicitante"), ("Série", "serie"), ("Cruzamento", "cruzamento")], "total_novos"),
+    "listar_historico_alteracoes": ("eventos", [("Quando", "horario"), ("Série", "serial"), ("Tipo", "tipo"), ("Antes", "apelido_anterior|usuario_anterior"), ("Depois", "apelido_novo|usuario_novo")], "total"),
+    "listar_apelidos_modificados": ("itens", [("Série", "serial"), ("Apelido", "apelido")], "total"),
+    "evolucao_atualizacoes": ("itens", [("Situação", "situacao"), ("Seção", "secao"), ("Série", "serie"), ("Computador", "computador"), ("Motivo", "motivo")], "total_itens"),
 }
 FICHA = {"consultar_equipamento": ("equipamento", [("Série", "serial"), ("Modelo", "modelo"), ("Tipo", "tipo"), ("Apelido", "apelido"),
                                                    ("Cidade", "cidade"), ("UF", "uf"), ("Usuário", "usuario_logado"), ("Contrato", "contrato")])}
@@ -24,6 +28,13 @@ def _pegar(dados: Any, caminho: str) -> Any:
     for parte in caminho.split("."):
         dados = dados.get(parte) if isinstance(dados, dict) else None
     return dados
+
+
+def _campo(item: Any, chaves: str) -> Any:
+    """Valor do primeiro campo preenchido de "a|b|c" (ex.: apelido ou usuário, conforme o tipo do evento)."""
+    if not isinstance(item, dict):
+        return ""
+    return next((item[k] for k in chaves.split("|") if item.get(k) not in (None, "")), "")
 
 
 def _valor(v: Any) -> str:
@@ -57,7 +68,7 @@ def cartao_html(ferramenta: str, resultado: Dict[str, Any]) -> Optional[str]:
     if not isinstance(lista, list) or not lista:
         return None
     cab = "<tr>" + "".join(f"<th {th}>{c}</th>" for c, _ in campos) + "</tr>"
-    linhas = "".join("<tr>" + "".join(f"<td>{_valor(i.get(k) if isinstance(i, dict) else '')}</td>" for _, k in campos) + "</tr>"
+    linhas = "".join("<tr>" + "".join(f"<td>{_valor(_campo(i, k))}</td>" for _, k in campos) + "</tr>"
                      for i in lista[:MAX_LINHAS])
     total = resultado.get(campo_total) if campo_total else None
     resto = (total if isinstance(total, int) else len(lista)) - min(len(lista), MAX_LINHAS)

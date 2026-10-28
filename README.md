@@ -40,7 +40,7 @@ Clique no orbe (ou 🎤) ou diga **“Hey Jarvis”**. Toca um bipe; fale e ele 
 .venv313\Scripts\python -c "import openwakeword.utils as u; u.download_models(['hey_jarvis'])"
 ```
 
-Sensibilidade: `JARVIS_WAKE_LIMIAR` (0 a 1, padrão 0.5; suba se disparar sozinho, desça se não ouvir). A escuta pausa enquanto o Jarvis fala, grava, espera a IA ou mostra um cartão de confirmação.
+Sensibilidade: `JARVIS_WAKE_LIMIAR` (0 a 1, padrão 0.4; suba se disparar sozinho, desça se não ouvir). Se o microfone for fraco, o Jarvis amplifica o áudio sozinho até `JARVIS_GANHO_MAX` vezes (padrão 10, mínimo 1; use 1 para desligar o ganho). A escuta pausa enquanto o Jarvis fala, grava, espera a IA ou mostra um cartão de confirmação.
 
 **Privacidade da escuta:** o áudio contínuo é analisado só neste computador e não é gravado. Só o trecho gravado **depois** do bipe vai ao modelo de transcrição do OpenRouter, como no 🎤.
 
@@ -62,6 +62,8 @@ Cada ferramenta é um arquivo em `actions/` (um item `TOOL` ou lista `TOOLS` com
 
 Leituras são livres. Alterações **sempre** mostram um cartão "Confirmar e executar / Cancelar" com texto montado pelo programa (nunca pela IA); no máximo uma alteração por turno.
 
+Leituras mais recentes (só consulta, sem cartão): `chamados_novos_sebrae`, `estado_usuarios_entra`, `listar_historico_alteracoes` (apelidos e usuários alterados), `listar_apelidos_modificados`, `evolucao_atualizacoes` (o que entrou e saiu entre duas atualizações) e `log_execucao_automacao` (últimas 40 linhas da rotina; sem id, usa a última que falhou).
+
 Alteram dados (exigem confirmação): atualizar apelido, atualizar usuário, executar automação, cancelar automação, decidir pendência, salvar unidade (editar ou criar), clicar_confirmado e digitar_confirmado no navegador.
 Não viram ferramenta (use o Simpress no navegador): restauração, exclusões, salvar equipamento, agendamento Sebrae.
 
@@ -77,11 +79,11 @@ O Jarvis não se conecta ao Chrome de automação (porta 9333); rotinas rodam pe
 
 ## Privacidade (LGPD)
 
-Usuário logado, apelido, nomes, e-mails e telefones viram tokens `[PESSOA_n]` antes de ir à IA. O mapa fica só na memória. A voz (Edge-TTS) fala os nomes reais; esse texto vai à Microsoft para virar áudio.
+Usuário logado, apelido, nomes, e-mails e telefones viram tokens `[PESSOA_n]` antes de ir à IA. CPF vira `***.***.***-**` e senha escrita como `senha: ...` é omitida, tanto nos resultados quanto no que você digita no chat. O mapa fica só na memória. A voz (Edge-TTS) fala os nomes reais; esse texto vai à Microsoft para virar áudio.
 
 ## Variáveis de ambiente
 
-`OPENROUTER_API_KEY`, `MODELO_PRINCIPAL`, `SIMPRESS_URL`, `SIMPRESS_DIR`, `JARVIS_REDUZIR_MOVIMENTO`, `JARVIS_ESCUTA`, `JARVIS_WAKE_LIMIAR`, `JARVIS_CHROME_PORTA` (padrão 9334; 9333, do Chrome do Simpress, é recusada) (ver `.env.example`).
+`OPENROUTER_API_KEY`, `MODELO_PRINCIPAL`, `SIMPRESS_URL`, `SIMPRESS_DIR`, `JARVIS_REDUZIR_MOVIMENTO`, `JARVIS_ESCUTA`, `JARVIS_WAKE_LIMIAR` (padrão 0.4), `JARVIS_GANHO_MAX` (ganho automático máximo do microfone fraco, padrão 10, mínimo 1), `JARVIS_CHROME_PORTA` (padrão 9334; 9333, do Chrome do Simpress, é recusada) (ver `.env.example`).
 
 Pacotes novos: `playwright` e `keyring`. O `iniciar_jarvis.bat` instala; para rodar manualmente use `pip install -r requirements.txt`.
 
@@ -90,5 +92,7 @@ Pacotes novos: `playwright` e `keyring`. O `iniciar_jarvis.bat` instala; para ro
 ```
 .venv313\Scripts\python -m pytest -q
 ```
+
+Para a verificação completa (compilação, testes e busca de credenciais nos arquivos rastreados, a mesma do CI), rode `scripts\verify.bat`. As regras para agentes e contribuições estão em `AGENTS.md`.
 
 Cobrem cliente HTTP, exportação, lote de importação, cartões de resposta, avisos, corte de silêncio, “Hey Jarvis” (re-buffer, limiar, repouso e plano B, com modelo falso), laço de ferramentas/confirmação, LGPD e contraste WCAG AA dos tokens. A janela foi verificada à mão contra o Simpress real (:8000) e contra um servidor falso, não pela suíte.

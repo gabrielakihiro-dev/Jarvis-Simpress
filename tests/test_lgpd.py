@@ -107,3 +107,33 @@ def test_mascara_campos_brutos_do_historico_de_comparacao():
     for valor in ("PRNOTETI096", "PRNOTETI096 - Backup Diretoria (M)"):
         assert valor not in texto
     assert m.restaurar(mascarado) == dados
+
+
+def test_mascara_cpf_formatado_no_meio_da_frase():
+    limpo = limpar_texto_sensivel("Titular CPF 123.456.789-00, favor conferir.")
+    assert limpo == "Titular CPF ***.***.***-**, favor conferir."
+
+
+def test_mascara_cpf_solto_so_com_digito_verificador_valido():
+    assert limpar_texto_sensivel("CPF 52998224725 ok") == "CPF ***.***.***-** ok"
+    # 11 dígitos inválidos (ou todos iguais) ficam intactos
+    assert limpar_texto_sensivel("protocolo 12345678900") == "protocolo 12345678900"
+    assert limpar_texto_sensivel("11111111111") == "11111111111"
+
+
+def test_cpf_nao_mascara_os_serie_nem_telefone():
+    texto = "OS 12345678 serie CMVXKV7YCM chamado 987654321"
+    assert limpar_texto_sensivel(texto) == texto
+    limpo = limpar_texto_sensivel("CPF 123.456.789-00 tel (41) 99876-5432")
+    assert limpo == "CPF ***.***.***-** tel [TELEFONE OCULTADO]"
+
+
+def test_omite_senha_mas_preserva_texto_comum():
+    limpo = limpar_texto_sensivel("login ana senha: Abc@123 e Password=xyz9. Senha expirada")
+    assert "Abc@123" not in limpo and "xyz9" not in limpo
+    assert limpo == "login ana senha: [DADO SENSÍVEL OMITIDO] e Password=[DADO SENSÍVEL OMITIDO] Senha expirada"
+
+
+def test_mascarar_aplica_cpf_em_resultado_de_ferramenta():
+    m = Mascara()
+    assert m.mascarar({"descricao": "CPF 123.456.789-00"})["descricao"] == "CPF ***.***.***-**"

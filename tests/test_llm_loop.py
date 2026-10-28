@@ -155,3 +155,11 @@ def test_base_offline_tenta_de_novo_na_proxima_mensagem():
     llm.enviar_mensagem("de novo")
     assert simpress.buscas_de_nomes == 2
     assert "Joana" not in json.dumps(llm.client.vistos[1], ensure_ascii=False)
+
+
+def test_cpf_e_senha_digitados_nao_vao_para_a_ia():
+    llm = novo([_resp(content="Ok.")])
+    llm.enviar_mensagem("CPF 123.456.789-00, senha: Abc@123")
+    enviado = llm.client.vistos[0][-1]["content"]
+    assert "123.456.789-00" not in enviado and "Abc@123" not in enviado
+    assert "***.***.***-**" in enviado
