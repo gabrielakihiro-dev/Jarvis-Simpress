@@ -11,7 +11,7 @@ from typing import Dict, List, Protocol, Tuple
 import credenciais
 from sites import CATALOGO
 
-Passo = Tuple[str, str]
+Passo = Tuple[str, ...]  # ("esperar", host, texto_ausente) aceita o 3º elemento opcional
 
 RECEITAS: Dict[str, List[Passo]] = {
     "dashboard": [
@@ -26,7 +26,7 @@ RECEITAS: Dict[str, List[Passo]] = {
         ("ir", CATALOGO["softexpert"]["url"]),
         ("clicar", "SSO"),
         ("escolher_conta", "gakihiro@pr.sebrae.com.br"),
-        ("esperar", "sebraepr.softexpert.app"),
+        ("esperar", "sebraepr.softexpert.app", "SSO"),  # a tela de login já está no host final
     ],
 }
 
@@ -40,7 +40,8 @@ class PaginaLogin(Protocol):
     def ir(self, url: str) -> None: ...
     def clicar_texto(self, texto: str) -> bool: ...
     def tem_campo(self, tipo: str) -> bool: ...
-    def preencher(self, tipo: str, valor: str) -> None: ...
+    def tem_texto(self, texto: str) -> bool: ...
+    def preencher(self, tipo: str, valor: str, hosts=None) -> None: ...
 
 
 def rodar_receita(
@@ -56,12 +57,17 @@ def rodar_receita(
         return {"login": "falhou", "site": site, "motivo": motivo}
 
     passos = RECEITAS[site]
-    host_final = passos[-1][1]
+    _, host_final, *resto = passos[-1]
+    texto_ausente = resto[0] if resto else None
+
+    def chegou():
+        return pagina.host() == host_final and not (texto_ausente and pagina.tem_texto(texto_ausente))
+
     try:
-        for tipo, valor in passos:
+        for tipo, valor, *_ in passos:
             if tipo == "ir":
                 pagina.ir(valor)
-                if pagina.host() == host_final:
+                if chegou():
                     return {"login": "ok", "site": site}
             elif tipo in ("clicar", "escolher_conta"):
                 pagina.clicar_texto(valor)  # opcional: a tela pode não aparecer
@@ -74,12 +80,13 @@ def rodar_receita(
                     return falhou(SEM_SENHA)
                 pagina.tem_campo("senha")  # espera o campo aparecer
                 # Host conferido logo antes de digitar: a aba pode ter mudado durante a espera.
-                if pagina.host() not in credenciais.CREDENCIAIS[valor]["hosts"]:
+                hosts = credenciais.CREDENCIAIS[valor]["hosts"]
+                if pagina.host() not in hosts:
                     return falhou(FORA_DO_HOST)
-                pagina.preencher("senha", senha)
+                pagina.preencher("senha", senha, hosts=hosts)  # o adaptador confere o host de novo
             elif tipo == "esperar":
                 inicio = agora()
-                while pagina.host() != valor:
+                while not chegou():
                     if agora() - inicio >= espera_mfa_s:
                         return {"login": "aguardando_mfa", "site": site}
                     dormir(intervalo_s)

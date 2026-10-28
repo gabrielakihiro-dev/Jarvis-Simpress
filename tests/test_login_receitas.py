@@ -6,8 +6,9 @@ from login_receitas import RECEITAS, rodar_receita
 
 
 class PaginaFalsa:
-    def __init__(self, hosts, campos, explode_em=None, texto_erro=""):
+    def __init__(self, hosts, campos, explode_em=None, texto_erro="", textos=(set(),)):
         self.hosts, self.campos, self.preenchidos = list(hosts), set(campos), []
+        self.textos, self.clicados = list(textos), []  # textos: visíveis a cada tem_texto; repete o último
         self.explode_em, self.texto_erro = explode_em, texto_erro
 
     def _talvez_explodir(self, metodo):
@@ -23,13 +24,17 @@ class PaginaFalsa:
 
     def clicar_texto(self, texto):
         self._talvez_explodir("clicar_texto")
+        self.clicados.append(texto)
         return False
 
     def tem_campo(self, tipo):
         self._talvez_explodir("tem_campo")
         return tipo in self.campos
 
-    def preencher(self, tipo, valor):
+    def tem_texto(self, texto):
+        return texto in (self.textos.pop(0) if len(self.textos) > 1 else self.textos[0])
+
+    def preencher(self, tipo, valor, hosts=None):
         self._talvez_explodir("preencher")
         self.preenchidos.append((tipo, valor))
 
@@ -87,10 +92,25 @@ def test_host_conferido_logo_antes_de_digitar():
     assert r["motivo"] == "Página fora dos endereços permitidos para esta senha." and p.preenchidos == []
 
 
-def test_softexpert_sem_senha_espera_host_final():
-    p = PaginaFalsa(hosts=["sso.exemplo.com", "sebraepr.softexpert.app"], campos=set())
+def test_softexpert_ok_so_quando_o_sso_some():
+    # A tela de login do SoftExpert já está no host final: o botão SSO visível ainda não é login.
+    p = PaginaFalsa(hosts=["sebraepr.softexpert.app"], campos=set(), textos=[{"SSO"}] * 3 + [set()])
     r = rodar_receita("softexpert", p, obter_senha=lambda c: 1 / 0, dormir=lambda s: None)
     assert r == {"login": "ok", "site": "softexpert"} and p.preenchidos == []
+    assert "SSO" in p.clicados and p.textos == [set()]
+
+
+def test_softexpert_sso_visivel_por_2_min_aguarda():
+    relogio = iter(range(0, 1000, 2))
+    p = PaginaFalsa(hosts=["sebraepr.softexpert.app"], campos=set(), textos=[{"SSO"}])
+    r = rodar_receita("softexpert", p, agora=lambda: next(relogio), dormir=lambda s: None)
+    assert r == {"login": "aguardando_mfa", "site": "softexpert"}
+
+
+def test_softexpert_ja_logado_nao_clica():
+    p = PaginaFalsa(hosts=["sebraepr.softexpert.app"], campos=set())
+    assert rodar_receita("softexpert", p, obter_senha=lambda c: 1 / 0) == {"login": "ok", "site": "softexpert"}
+    assert p.clicados == []
 
 
 def test_logar_site_devolve_resultado_da_receita(monkeypatch):
@@ -131,4 +151,30 @@ def test_adaptador_devolve_false_no_timeout():
 
     p = nj.PaginaPlaywright(Page())
     assert p.host() == "login.microsoftonline.com"
-    assert p.tem_campo("senha") is False and p.clicar_texto("Sim") is False
+    assert p.tem_campo("senha") is False and p.clicar_texto("Sim") is False and p.tem_texto("SSO") is False
+
+
+def test_adaptador_confere_host_colado_no_fill():
+    class Campo:
+        preenchido = None
+        first = property(lambda self: self)
+
+        def fill(self, valor, **kw):
+            self.preenchido = valor
+
+        def press(self, tecla, **kw):
+            pass
+
+    class Page:
+        url = "https://phish.com/login"
+        campo = Campo()
+        locator = lambda self, sel: self.campo
+
+    page = Page()
+    p = nj.PaginaPlaywright(page)
+    with pytest.raises(nj.NavegadorErro):
+        p.preencher("senha", "S3nh@", hosts=("login.microsoftonline.com",))
+    assert page.campo.preenchido is None
+    page.url = "https://login.microsoftonline.com/x"
+    p.preencher("senha", "S3nh@", hosts=("login.microsoftonline.com",))
+    assert page.campo.preenchido == "S3nh@"
