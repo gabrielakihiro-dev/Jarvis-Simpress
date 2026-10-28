@@ -104,4 +104,29 @@ TOOLS = [
         "Pendências de usuários logados aguardando decisão (permitir, recusar, remover ou manter).",
         lambda c, a: c.listar_pendencias_usuarios(),
     ),
+    tool(
+        "listar_secao_comparacao",
+        "Lista os itens de uma seção do último cruzamento de planilhas: correspondências ambíguas "
+        "(séries/hostnames duplicados ou conflitantes; cada item tem 'chave' ou, se for duplicidade "
+        "de série, 'serie'/'computador'), séries sem mapeamento, apelidos/hostnames atualizados, "
+        "divergências de apelidos manuais (apelido digitado manualmente diferente do que está nas "
+        "planilhas) ou mudanças de usuário logado. Use para responder 'qual' é a série, apelido ou "
+        "usuário por trás de um total mostrado no painel. Não cobre 'apelidos sem atualização': "
+        "para esse total, use consultar_ultima_comparacao (não há lista item a item dele).",
+        lambda c, a: c.listar_secao_comparacao(str(a.get("secao", ""))),
+        {
+            "secao": {
+                "type": "string",
+                "enum": [
+                    "correspondencias_ambiguas",
+                    "series_sem_mapeamento",
+                    "apelidos_atualizados",
+                    "divergencias_apelidos_manuais",
+                    "mudancas_usuarios",
+                ],
+                "description": "Seção a listar.",
+            }
+        },
+        ["secao"],
+    ),
 ]

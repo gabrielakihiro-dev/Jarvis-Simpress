@@ -128,11 +128,11 @@ def test_resposta_grande_e_cortada_depois_da_mascara():
     assert "Pessoa Numero" not in msg["content"]
 
 
-def test_divergencias_localidade_nao_manda_itens_pro_modelo():
+def test_divergencias_localidade_manda_itens_pro_modelo():
     llm = novo([])
     resultado = {"total": 6, "itens": [{"serie": "BRJ1", "computador": "PC1"}], "aviso_transferencias": "x"}
     msg = llm._msg_tool("t1", "listar_divergencias_localidade", resultado)
-    assert "BRJ1" not in msg["content"] and '"total": 6' in msg["content"] and "x" in msg["content"]
+    assert "BRJ1" in msg["content"] and '"total": 6' in msg["content"] and "x" in msg["content"]
 
 
 def test_nome_da_base_digitado_vai_mascarado_e_volta_na_tela():

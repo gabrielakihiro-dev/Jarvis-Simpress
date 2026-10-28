@@ -25,6 +25,10 @@ CHAVES_SENSIVEIS = frozenset({
     "usuario_logado", "usuarios_logados", "usuario_manual", "usuario", "apelido",
     "nome", "nome_pessoa", "solicitante", "responsavel", "login", "email",
     "entrega_contato", "retirada_contato",
+    "usuario_anterior", "usuario_novo", "nome_pessoa_anterior", "nome_pessoa_novo",
+    "apelido_manual", "apelido_anterior", "apelido_novo",
+    "apelido_na_simpress", "apelido_no_endpoint",
+    "apelido_equipamentos_detalhes", "apelido_invall", "computador",
 })
 # Textos livres (escritos por pessoas) onde um nome conhecido pode aparecer no meio da frase.
 CHAVES_TEXTO_LIVRE = frozenset({
