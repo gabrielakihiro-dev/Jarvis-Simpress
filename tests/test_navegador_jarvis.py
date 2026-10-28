@@ -78,7 +78,12 @@ class _Contexto:
 
 class _Browser:
     def __init__(self, paginas):
-        self.contexts = [_Contexto(paginas)]
+        self.contexts = [_Contexto(paginas)] if paginas is not None else []
+        self.novo = _Contexto([])
+
+    def new_context(self):
+        self.contexts.append(self.novo)
+        return self.novo
 
 
 def _ordem(monkeypatch, ids):
@@ -113,3 +118,9 @@ def test_pagina_ativa_sem_paginas_abre_uma(monkeypatch):
     _ordem(monkeypatch, None)
     br = _Browser([])
     assert nj.pagina_ativa(br) == "nova" and br.contexts[0].novas
+
+
+def test_pagina_ativa_sem_contexto_cria_contexto(monkeypatch):
+    _ordem(monkeypatch, None)
+    br = _Browser(None)
+    assert nj.pagina_ativa(br) == "nova" and br.contexts == [br.novo]

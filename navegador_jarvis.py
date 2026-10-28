@@ -171,11 +171,23 @@ def achar_elemento(page, alvo: str):
     raise NavegadorErro(f"Não achei '{alvo}' na página.")
 
 
+_JS_NOMES = r"""(e) => {
+  const attrs = ['aria-label', 'title', 'alt'];
+  const t = [e.innerText];
+  for (const a of attrs) t.push(e.getAttribute(a));
+  if (['submit', 'button', 'reset'].includes((e.getAttribute('type') || '').toLowerCase())) t.push(e.getAttribute('value'));
+  for (const id of (e.getAttribute('aria-labelledby') || '').split(/\s+/)) {
+    const r = id && document.getElementById(id);
+    if (r) t.push(r.innerText || r.getAttribute('aria-label'));
+  }
+  for (const d of e.querySelectorAll('[alt], [title], [aria-label]')) for (const a of attrs) t.push(d.getAttribute(a));
+  return t.filter(x => x && x.trim());
+}"""
+
+
 def textos_do_elemento(loc) -> List[str]:
-    textos = [loc.inner_text(), loc.get_attribute("aria-label"), loc.get_attribute("title")]
-    if (loc.get_attribute("type") or "").lower() in ("submit", "button", "reset"):
-        textos.append(loc.get_attribute("value"))
-    return [t for t in textos if t]
+    """Tudo que dá nome ao elemento (inclusive alt/title de filhos e aria-labelledby); nunca value de campo."""
+    return loc.evaluate(_JS_NOMES)
 
 
 def e_senha(loc) -> bool:
@@ -184,6 +196,7 @@ def e_senha(loc) -> bool:
 
 _JS_ELEMENTOS = r"""(max) => {
   const out = [];
+  const nome = (e) => (__NOMES__)(e)[0] || '';
   const rotuloCampo = (e) => {
     const l = e.labels && e.labels[0];
     return (l && l.innerText) || e.getAttribute('aria-label') || e.placeholder || e.name || '';
@@ -195,17 +208,17 @@ _JS_ELEMENTOS = r"""(max) => {
     let kind, rotulo;
     if (e.matches('input, textarea, select')) {
       if (tipo === 'hidden') continue;
-      if (['submit', 'button', 'reset'].includes(tipo)) { kind = 'botao'; rotulo = e.value || e.getAttribute('aria-label') || ''; }
+      if (['submit', 'button', 'reset', 'image'].includes(tipo)) { kind = 'botao'; rotulo = (tipo === 'image' ? '' : e.value) || nome(e); }
       else { kind = 'campo'; rotulo = rotuloCampo(e); }
     } else {
       kind = e.matches('a') ? 'link' : 'botao';
-      rotulo = e.innerText || e.getAttribute('aria-label') || e.title || '';
+      rotulo = nome(e);
     }
     rotulo = rotulo.replace(/\s+/g, ' ').trim();
     if (rotulo) out.push({tipo: kind, rotulo});
   }
   return out;
-}"""
+}""".replace("__NOMES__", _JS_NOMES)
 
 
 def extrair_pagina(page, limite: int = 5000, max_elementos: int = 60) -> Dict:

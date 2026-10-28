@@ -5,7 +5,9 @@ import navegador_jarvis as nj
 HTML = """<label for=u>Usuário</label><input id=u value="joao.silva">
 <input type=password aria-label=Senha value="segredo123">
 <button aria-label="Excluir"><svg></svg></button><input type=submit value="Buscar">
-<p>Olá mundo</p>"""
+<button><img alt="Excluir"></button><button><span title="Apagar"></span></button>
+<span id=rot>Remover</span><button aria-labelledby=rot></button>
+<input type=image alt="Enviar"><p>Olá mundo</p>"""
 
 
 @pytest.fixture
@@ -36,3 +38,12 @@ def test_botao_so_icone_e_arriscado(pagina):
     assert nj.e_arriscado(nj.textos_do_elemento(nj.achar_elemento(pagina, "Excluir")))
     assert not nj.e_arriscado(nj.textos_do_elemento(nj.achar_elemento(pagina, "Buscar")))
     assert nj.e_senha(nj.achar_elemento(pagina, "Senha"))
+
+
+def test_nome_vindo_de_filho_ou_labelledby_e_arriscado(pagina):
+    pagina.set_content(HTML)
+    for alvo in ("Apagar", "Remover", "Enviar"):
+        assert nj.e_arriscado(nj.textos_do_elemento(nj.achar_elemento(pagina, alvo))), alvo
+    pagina.set_content('<button><img alt="Excluir"></button>')
+    assert nj.e_arriscado(nj.textos_do_elemento(nj.achar_elemento(pagina, "Excluir")))
+    assert {"tipo": "botao", "rotulo": "Excluir"} in nj.extrair_pagina(pagina)["elementos"]
