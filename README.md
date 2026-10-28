@@ -65,7 +65,15 @@ Leituras são livres. Alterações **sempre** mostram um cartão "Confirmar e ex
 Alteram dados (exigem confirmação): atualizar apelido, atualizar usuário, executar automação, cancelar automação, decidir pendência, salvar unidade (editar ou criar).
 Não viram ferramenta (use o Simpress no navegador): restauração, exclusões, salvar equipamento, agendamento Sebrae.
 
-O Jarvis não se conecta ao Chrome de automação (porta 9333); rotinas rodam pelo servidor.
+O Jarvis não se conecta ao Chrome de automação (porta 9333); rotinas rodam pelo servidor. Os sites usam o Chrome do Jarvis (seção abaixo).
+
+## Abrir e usar sites
+
+- **Abrir (`abrir`):** sites do catálogo (YouTube, Endpoint Central, UX Simpress, Dashboard, SoftExpert; ver `sites.py`), qualquer URL http/https e programas do Menu Iniciar, vários de uma vez. Sites abrem no **Chrome do Jarvis**; se ele não subir, no navegador padrão.
+- **Chrome do Jarvis:** Chrome visível com perfil próprio (`%LOCALAPPDATA%\JarvisChrome`) e CDP em 127.0.0.1, porta 9334 (`JARVIS_CHROME_PORTA`). É separado do Chrome do Simpress (9333).
+- **Ferramentas de navegador:** navegar, ler_pagina, clicar, clicar_confirmado, digitar, digitar_confirmado, abas e logar_site.
+- **Cartão de confirmação:** cliques de risco (enviar, salvar, excluir…) e digitação no SharePoint pedem o cartão. O cartão do Dashboard avisa que a rotina do Sebrae grava essa planilha a cada 30 min. `digitar` com Enter (busca) roda sem cartão fora do SharePoint: Enter num formulário pode enviá-lo.
+- **Senhas:** ⚙ › Credenciais… guarda no Gerenciador de Credenciais do Windows (`Jarvis/<id>`). Senha nunca vai por chat ou voz e só é digitada nos sites permitidos. MFA e PIN são sempre seus. `logar_site` funciona para Dashboard e SoftExpert; as receitas do UX Simpress e do Endpoint Central ainda faltam (serão mapeadas ao vivo com você).
 
 ## Privacidade (LGPD)
 

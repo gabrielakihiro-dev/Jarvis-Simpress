@@ -48,6 +48,8 @@ SUGESTOES = {
     "listar_unidades": ["Quero editar o endereço de uma unidade."],
     "consultar_equipamento": ["Em qual unidade fica esse equipamento?"],
     "exportar_planilha": ["Exporte a planilha de chamados.", "Exporte a planilha de equipamentos."],
+    "abrir": ["Ler a página", "Entrar no site"],
+    "ler_pagina": ["Resumir a página"],
 }
 
 INTERVALO_LOTE_MS = 5000
