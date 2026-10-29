@@ -6,13 +6,16 @@ código de fora dele é carregado.
 """
 
 import importlib
+import os
 import pkgutil
 from typing import Any, Dict
 
 
 def carregar() -> Dict[str, Dict[str, Any]]:
     achadas: Dict[str, Dict[str, Any]] = {}
-    for modulo in sorted(m.name for m in pkgutil.iter_modules(__path__) if not m.name.startswith("_")):
+    # Modo leve (servidor_leve.py): sem Chrome nem keyring, então sem as ferramentas de navegador e PC.
+    pular = {"navegador", "pc"} if os.environ.get("JARVIS_MODO_LEVE") == "1" else set()
+    for modulo in sorted(m.name for m in pkgutil.iter_modules(__path__) if not m.name.startswith("_") and m.name not in pular):
         mod = importlib.import_module(f"{__name__}.{modulo}")
         itens = ([mod.TOOL] if hasattr(mod, "TOOL") else []) + list(getattr(mod, "TOOLS", []))
         for item in itens:

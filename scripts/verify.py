@@ -6,7 +6,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 PADROES = [re.compile(r"sk-or-[A-Za-z0-9-]{20,}"), re.compile(r"OPENROUTER_API_KEY\s*=\s*(?!\S*\.\.\.)\S{10,}")]  # "..." = placeholder em mensagens
-EXCLUIR = r"[\/](\.venv|\.venv313|\.claude|\.git|data|modelos_voz)([\/]|$)"
+EXCLUIR = r"[\/](\.venv|\.venv313|\.venv-leve|\.claude|\.git|data|modelos_voz)([\/]|$)"
 IGNORADOS = {".env.example", "scripts/verify.py"}  # o script contém os próprios padrões
 
 

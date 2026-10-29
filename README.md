@@ -81,9 +81,18 @@ O Jarvis não se conecta ao Chrome de automação (porta 9333); rotinas rodam pe
 
 Usuário logado, apelido, nomes, e-mails e telefones viram tokens `[PESSOA_n]` antes de ir à IA. CPF vira `***.***.***-**` e senha escrita como `senha: ...` é omitida, tanto nos resultados quanto no que você digita no chat. O mapa fica só na memória. A voz (Edge-TTS) fala os nomes reais; esse texto vai à Microsoft para virar áudio.
 
+## Modo leve (painel no Simpress)
+
+Para notebooks fracos: sem janela, voz, “Hey Jarvis” nem Chrome. Dê dois cliques em `iniciar_jarvis_leve.bat`. Ele cria `.venv-leve` (só `requirements-leve.txt`: httpx, openai, python-dotenv, truststore), reinstala só quando esse arquivo muda e sobe `servidor_leve.py` em `http://127.0.0.1:8766` (`JARVIS_LEVE_PORTA`). O chat fica no painel do Simpress, que repassa as mensagens pelo próprio servidor.
+
+- Mesmo cérebro, mesmas regras: máscara LGPD, uma alteração por turno e cartão de confirmação com texto montado pelo programa (o painel mostra só a descrição).
+- Sem as ferramentas de navegador e PC (`JARVIS_MODO_LEVE=1` tira `actions/navegador.py` e `actions/pc.py`, e com eles o `keyring`).
+- Só escuta em 127.0.0.1 e recusa chamadas vindas direto do navegador (cabeçalhos `Origin`/`Sec-Fetch-Site`). Uma conversa por notebook.
+- Rotas: `POST /mensagem`, `POST /confirmar`, `POST /limpar` e `GET /estado` (contrato no topo de `servidor_leve.py`).
+
 ## Variáveis de ambiente
 
-`OPENROUTER_API_KEY`, `MODELO_PRINCIPAL`, `SIMPRESS_URL`, `SIMPRESS_DIR`, `JARVIS_REDUZIR_MOVIMENTO`, `JARVIS_ESCUTA`, `JARVIS_WAKE_LIMIAR` (padrão 0.4), `JARVIS_GANHO_MAX` (ganho automático máximo do microfone fraco, padrão 10, mínimo 1), `JARVIS_CHROME_PORTA` (padrão 9334; 9333, do Chrome do Simpress, é recusada) (ver `.env.example`).
+`OPENROUTER_API_KEY`, `MODELO_PRINCIPAL`, `SIMPRESS_URL`, `SIMPRESS_DIR`, `JARVIS_REDUZIR_MOVIMENTO`, `JARVIS_ESCUTA`, `JARVIS_WAKE_LIMIAR` (padrão 0.4), `JARVIS_GANHO_MAX` (ganho automático máximo do microfone fraco, padrão 10, mínimo 1), `JARVIS_CHROME_PORTA` (padrão 9334; 9333, do Chrome do Simpress, é recusada), `JARVIS_LEVE_PORTA` (modo leve, padrão 8766; a 8765 é do ui-fixture do Simpress) (ver `.env.example`).
 
 Pacotes novos: `playwright` e `keyring`. O `iniciar_jarvis.bat` instala; para rodar manualmente use `pip install -r requirements.txt`.
 
