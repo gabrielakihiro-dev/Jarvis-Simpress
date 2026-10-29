@@ -45,6 +45,11 @@ for /f "tokens=2" %%a in ('netstat -ano -p tcp ^| findstr LISTENING') do (
         )
     )
 )
+rem Em algumas maquinas o netstat nao lista o servidor (escuta oculta), mas o curl alcanca. Sem este plano B o
+rem servidor nunca era achado e o Jarvis esperava os 2 minutos inteiros. Porta fechada responde em ~40 ms.
+if not defined SIMPRESS_URL for /l %%p in (8000,1,8009) do (
+    if not defined SIMPRESS_URL curl -sf -m 2 -o nul http://127.0.0.1:%%p/api/stats && set "SIMPRESS_URL=http://127.0.0.1:%%p"
+)
 exit /b 0
 
 :instalar
