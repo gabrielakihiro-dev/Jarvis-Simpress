@@ -10,7 +10,7 @@ from tools.simpress_tools import MUTADORAS, SimpressToolbox
 from ui.cartoes import cartao_html
 
 NOVAS = {
-    "chamados_novos_sebrae", "estado_usuarios_entra", "listar_historico_alteracoes",
+    "chamados_novos_sebrae", "chamados_antigos_abertos_sebrae", "estado_usuarios_entra", "listar_historico_alteracoes",
     "listar_apelidos_modificados", "evolucao_atualizacoes", "log_execucao_automacao",
 }
 
@@ -81,6 +81,24 @@ def test_chamados_novos_sebrae_sem_leitura_e_erro_http():
     assert res["dashboard_importado"] is False and "Ainda não" in res["mensagem"]
     c = SimpressClient(base_url="http://x", transport=httpx.MockTransport(lambda r: httpx.Response(500, json={"detail": "ruim"})))
     assert "500" in c.chamados_novos_sebrae()["erro"]
+
+
+def test_chamados_antigos_abertos_sebrae_lista_inclusive_composto_e_limpa_texto():
+    abertos = [{"numero": f"UTIC-2026-{i:04d}", "titulo": "Fulano 111.444.777-35 " + "x" * 500,
+                "valores": {"A": "" if i else "Ana", "B": "", "D": "EM ABERTO", "J": "INCIDENTE"}} for i in range(25)]
+    c = cliente({"/api/sebrae/novos": {"importado": {"arquivo": "d.xlsx", "importado_em": "h", "total": 9, "abertos": abertos}, "novos": None}})
+    res = c.chamados_antigos_abertos_sebrae()
+    assert res["total_abertos"] == 25 and len(res["abertos"]) == simpress_client.MAX_ITENS_LISTA and res["omitidos"] == 25 - simpress_client.MAX_ITENS_LISTA
+    assert res["sem_responsavel"] == 24 and res["abertos"][0]["responsavel"] == "Ana" and res["abertos"][1]["status"] == "EM ABERTO"
+    assert len(res["abertos"][0]["titulo"]) <= simpress_client.MAX_TEXTO_CHAMADO and "111.444.777-35" not in res["abertos"][0]["titulo"]
+    assert [r.method for r in c.vistas] == ["GET"]
+
+
+def test_chamados_antigos_abertos_sebrae_sem_dashboard_e_erro_http():
+    res = cliente({"/api/sebrae/novos": {"importado": None, "novos": None}}).chamados_antigos_abertos_sebrae()
+    assert res["dashboard_importado"] is False and "Ainda não" in res["mensagem"]
+    c = SimpressClient(base_url="http://x", transport=httpx.MockTransport(lambda r: httpx.Response(500, json={"detail": "ruim"})))
+    assert "500" in c.chamados_antigos_abertos_sebrae()["erro"]
 
 
 def test_historico_alteracoes_limita_e_mapeia_valor_anterior():
@@ -158,6 +176,9 @@ def test_cartoes_das_listas_novas():
     h = cartao_html("chamados_novos_sebrae", {"total_novos": 12, "chamados": [
         {"numero": "N1", "titulo": "<b>x</b>", "solicitante": "Ana", "serie": "S1", "cruzamento": "unico"}] * 10})
     assert "N1" in h and "&lt;b&gt;x" in h and "+ 2 itens" in h
+    h = cartao_html("chamados_antigos_abertos_sebrae", {"total_abertos": 3, "abertos": [
+        {"numero": "UTIC-1", "titulo": "t", "responsavel": "Ana", "status": "EM ABERTO", "tipo": "INCIDENTE"}]})
+    assert "UTIC-1" in h and "EM ABERTO" in h and "+ 2 itens" in h
     h = cartao_html("listar_historico_alteracoes", {"total": 2, "eventos": [
         {"horario": "h", "serial": "S1", "tipo": "apelido", "apelido_anterior": "A", "apelido_novo": "B"},
         {"horario": "h", "serial": "S2", "tipo": "usuario", "usuario_anterior": "ana", "usuario_novo": "beto"}]})

@@ -14,7 +14,7 @@ NOMES_ESPERADOS = {
     "listar_divergencias_localidade", "consultar_divergencia_localidade", "listar_secao_comparacao",
     "navegar", "ler_pagina", "clicar", "clicar_confirmado", "digitar", "digitar_confirmado", "abas",
     "logar_site",
-    "chamados_novos_sebrae", "estado_usuarios_entra", "listar_historico_alteracoes",
+    "chamados_novos_sebrae", "chamados_antigos_abertos_sebrae", "estado_usuarios_entra", "listar_historico_alteracoes",
     "listar_apelidos_modificados", "evolucao_atualizacoes", "log_execucao_automacao",
 }
 MUTADORAS_ESPERADAS = {

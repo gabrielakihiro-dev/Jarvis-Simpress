@@ -728,6 +728,34 @@ class SimpressClient:
             "erros": [{"numero": str(n), "erro": str(m)} for n, m in list(erros.items())[:MAX_ITENS_LISTA]],
         })
 
+    def chamados_antigos_abertos_sebrae(self) -> Dict[str, Any]:
+        """Chamados antigos do Dashboard importado com Status EM ABERTO ou vazio (inclui os de coluna C composta). Só leitura."""
+        ok, dados = self._chamar("GET", "/api/sebrae/novos")
+        if not ok:
+            return {"erro": dados}
+        importado = dados.get("importado") if isinstance(dados, dict) and isinstance(dados.get("importado"), dict) else None
+        if importado is None:
+            return {"dashboard_importado": False, "mensagem": "Ainda não há Dashboard do Sebrae importado."}
+        abertos = [a for a in importado.get("abertos") or [] if isinstance(a, dict)]
+        itens = []
+        for a in abertos:
+            v = a.get("valores") if isinstance(a.get("valores"), dict) else {}
+            itens.append({
+                "numero": str(a.get("numero") or ""),
+                "titulo": limpar_texto_sensivel(a.get("titulo"))[:MAX_TEXTO_CHAMADO],
+                "responsavel": limpar_texto_sensivel(v.get("A")),
+                "categoria": limpar_texto_sensivel(v.get("B")),
+                "status": str(v.get("D") or ""),
+                "tipo": str(v.get("J") or ""),
+            })
+        return _aparar({
+            "dashboard_importado": {k: importado.get(k, "") for k in ("arquivo", "importado_em", "total")},
+            "total_abertos": len(itens),
+            "sem_responsavel": sum(1 for i in itens if not i["responsavel"]),
+            "abertos": [_aparar(i) for i in itens[:MAX_ITENS_LISTA]],
+            "omitidos": max(0, len(itens) - MAX_ITENS_LISTA),
+        })
+
     def estado_usuarios_entra(self) -> Dict[str, Any]:
         """Quando o CSV do Entra foi importado e quantos usuários ele trouxe (só contagens)."""
         return self._leitura("/api/usuarios-entra/estado")

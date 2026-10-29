@@ -62,7 +62,7 @@ Cada ferramenta é um arquivo em `actions/` (um item `TOOL` ou lista `TOOLS` com
 
 Leituras são livres. Alterações **sempre** mostram um cartão "Confirmar e executar / Cancelar" com texto montado pelo programa (nunca pela IA); no máximo uma alteração por turno.
 
-Leituras mais recentes (só consulta, sem cartão): `chamados_novos_sebrae`, `estado_usuarios_entra`, `listar_historico_alteracoes` (apelidos e usuários alterados), `listar_apelidos_modificados`, `evolucao_atualizacoes` (o que entrou e saiu entre duas atualizações) e `log_execucao_automacao` (últimas 40 linhas da rotina; sem id, usa a última que falhou).
+Leituras mais recentes (só consulta, sem cartão): `chamados_novos_sebrae`, `chamados_antigos_abertos_sebrae` (antigos EM ABERTO do Dashboard, inclusive com coluna C composta), `estado_usuarios_entra`, `listar_historico_alteracoes` (apelidos e usuários alterados), `listar_apelidos_modificados`, `evolucao_atualizacoes` (o que entrou e saiu entre duas atualizações) e `log_execucao_automacao` (últimas 40 linhas da rotina; sem id, usa a última que falhou).
 
 Alteram dados (exigem confirmação): atualizar apelido, atualizar usuário, executar automação, cancelar automação, decidir pendência, salvar unidade (editar ou criar), clicar_confirmado e digitar_confirmado no navegador.
 Não viram ferramenta (use o Simpress no navegador): restauração, exclusões, salvar equipamento, agendamento Sebrae.

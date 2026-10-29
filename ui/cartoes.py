@@ -16,6 +16,7 @@ TABELAS = {
     "listar_pendencias_usuarios": ("dados.pendencias", [("Série", "serie"), ("Computador", "computador"), ("Tipo", "tipo"), ("Usuário atual", "usuario_atual")], ""),
     "listar_divergencias_localidade": ("itens", [("Série", "serie"), ("Computador", "computador"), ("Local Previsto", "local_previsto"), ("Local na Simpress", "local_na_simpress")], "total"),
     "chamados_novos_sebrae": ("chamados", [("Chamado", "numero"), ("Título", "titulo"), ("Solicitante", "solicitante"), ("Série", "serie"), ("Cruzamento", "cruzamento")], "total_novos"),
+    "chamados_antigos_abertos_sebrae": ("abertos", [("Chamado", "numero"), ("Título", "titulo"), ("Responsável", "responsavel"), ("Status", "status"), ("Tipo", "tipo")], "total_abertos"),
     "listar_historico_alteracoes": ("eventos", [("Quando", "horario"), ("Série", "serial"), ("Tipo", "tipo"), ("Antes", "apelido_anterior|usuario_anterior"), ("Depois", "apelido_novo|usuario_novo")], "total"),
     "listar_apelidos_modificados": ("itens", [("Série", "serial"), ("Apelido", "apelido")], "total"),
     "evolucao_atualizacoes": ("itens", [("Situação", "situacao"), ("Seção", "secao"), ("Série", "serie"), ("Computador", "computador"), ("Motivo", "motivo")], "total_itens"),
