@@ -42,8 +42,15 @@ CHAVES_TEXTO_LIVRE = frozenset({
     "anotacao", "descricao", "observacao", "motivo", "detalhes", "comentario", "mensagem", "erro",
     "texto_pagina", "rotulo", "titulo",
 })
+# Chaves cujo valor é nome de pessoa: cada palavra do nome também vira marcador, para pegar "o Bruno" no meio de um texto.
+CHAVES_NOME_PESSOA = frozenset({
+    "nome", "nome_pessoa", "solicitante", "responsavel", "usuario_logado", "usuarios_logados", "usuario_manual",
+    "usuario", "usuario_anterior", "usuario_novo", "nome_pessoa_anterior", "nome_pessoa_novo",
+})
+PARTICULAS_NOME = frozenset({"de", "da", "do", "das", "dos", "e"})
 SEM_USUARIO = "Sem usuário registrado"
 MIN_NOME_BASE = 3
+MIN_PARTE_NOME = 4  # "Ana" ou "Li" solta trocaria pedaços de outras palavras
 
 
 def _cpf_valido(digitos: str) -> bool:
@@ -110,6 +117,10 @@ class Mascara:
                 self._registrar(v, chave)
         elif isinstance(obj, str) and chave in CHAVES_SENSIVEIS and obj.strip() and obj != SEM_USUARIO:
             self._marcador(obj)
+            if chave in CHAVES_NOME_PESSOA:
+                for parte in re.findall(r"[^\W\d_]+", obj):
+                    if len(parte) >= MIN_PARTE_NOME and parte.casefold() not in PARTICULAS_NOME:
+                        self._marcador(parte)
 
     def _trocar(self, obj: Any, chave: str) -> Any:
         if isinstance(obj, dict):

@@ -137,3 +137,16 @@ def test_omite_senha_mas_preserva_texto_comum():
 def test_mascarar_aplica_cpf_em_resultado_de_ferramenta():
     m = Mascara()
     assert m.mascarar({"descricao": "CPF 123.456.789-00"})["descricao"] == "CPF ***.***.***-**"
+
+
+def test_nome_citado_so_pelo_primeiro_nome_em_texto_livre_e_mascarado():
+    m = Mascara()
+    r = m.mascarar({"solicitante": "Bruno Gabriel de Oliveira", "descricao": "preciso que o Gabriel acesse; fale com a Oliveira"})
+    assert "Gabriel" not in str(r) and "Oliveira" not in str(r)
+    assert m.restaurar(r["descricao"]) == "preciso que o Gabriel acesse; fale com a Oliveira"
+
+
+def test_particulas_e_pedacos_curtos_do_nome_nao_sao_mascarados():
+    m = Mascara()
+    r = m.mascarar({"solicitante": "Ana de Souza", "descricao": "ana de casa: dados da conta"})
+    assert "de casa" in r["descricao"] and "dados" in r["descricao"] and "Souza" not in str(r["solicitante"])
