@@ -1,6 +1,8 @@
 from array import array
 from pathlib import Path
 
+import pytest
+
 from ui.escuta import MODELO_VOZ, Conversa, CorteSilencio, caminho_curto, para_mono_16k, pico
 
 
@@ -171,6 +173,7 @@ def test_palavra_na_fila_do_vosk_nao_acorda_nem_cancela_com_mudo(escuta):
     assert acordou == [] and cancelou == []
 
 
+@pytest.mark.skipif(not MODELO_VOZ.is_dir(), reason="modelos_voz/ fica fora do Git")
 def test_caminho_do_modelo_de_voz_sem_acento():
     curto = caminho_curto(MODELO_VOZ)
     assert curto.isascii() and Path(curto).is_dir()
