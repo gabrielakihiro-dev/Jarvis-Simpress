@@ -5,6 +5,7 @@ credencial. Nunca entra no resultado nem em mensagem de erro. MFA, código e PIN
 a receita só espera o site final aparecer.
 """
 
+import os
 import time
 from typing import Dict, List, Protocol, Tuple
 
@@ -13,10 +14,11 @@ from sites import CATALOGO
 
 Passo = Tuple[str, ...]  # ("esperar", host, texto_ausente) aceita o 3º elemento opcional
 
+# Valor "$VAR" = variável do .env, lida na hora de rodar (e-mails e links pessoais não ficam no código).
 RECEITAS: Dict[str, List[Passo]] = {
     "dashboard": [
-        ("ir", CATALOGO["dashboard"]["url"]),
-        ("escolher_conta", "gansouza@simpress.com.br"),
+        ("ir", "$JARVIS_URL_DASHBOARD"),
+        ("escolher_conta", "$JARVIS_CONTA_MICROSOFT"),
         ("usuario", "microsoft-simpress"),
         ("senha", "microsoft-simpress"),
         ("clicar", "Sim"),  # tela "Continuar conectado?"
@@ -25,7 +27,7 @@ RECEITAS: Dict[str, List[Passo]] = {
     "softexpert": [
         ("ir", CATALOGO["softexpert"]["url"]),
         ("clicar", "SSO"),
-        ("escolher_conta", "gakihiro@pr.sebrae.com.br"),
+        ("escolher_conta", "$JARVIS_CONTA_SOFTEXPERT"),
         ("esperar", "sebraepr.softexpert.app", "SSO"),  # a tela de login já está no host final
     ],
 }
@@ -33,6 +35,21 @@ RECEITAS: Dict[str, List[Passo]] = {
 SEM_SENHA = "Senha não cadastrada. Use ⚙ › Credenciais…"
 FORA_DO_HOST = "Página fora dos endereços permitidos para esta senha."
 ERRO_NAVEGADOR = "Erro no navegador durante o login."
+
+
+def _valor(v: str) -> str:
+    return os.environ.get(v[1:], "").strip() if v.startswith("$") else v
+
+
+def _variaveis_faltando(passos: List[Passo]) -> List[str]:
+    faltam = {v[1:] for _, v, *_ in passos if v.startswith("$") and not _valor(v)}
+    for tipo, valor, *_ in passos:
+        if tipo in ("usuario", "senha"):
+            try:
+                credenciais.usuario(valor)
+            except credenciais.ContaNaoConfigurada as e:
+                faltam.add(e.variavel)
+    return sorted(faltam)
 
 
 class PaginaLogin(Protocol):
@@ -57,6 +74,9 @@ def rodar_receita(
         return {"login": "falhou", "site": site, "motivo": motivo}
 
     passos = RECEITAS[site]
+    faltam = _variaveis_faltando(passos)  # antes do try: lá dentro qualquer erro vira a mensagem genérica
+    if faltam:
+        return falhou(f"Falta configurar no arquivo .env do Jarvis: {', '.join(faltam)}.")
     _, host_final, *resto = passos[-1]
     texto_ausente = resto[0] if resto else None
 
@@ -65,6 +85,7 @@ def rodar_receita(
 
     try:
         for tipo, valor, *_ in passos:
+            valor = _valor(valor)
             if tipo == "ir":
                 pagina.ir(valor)
                 if chegou():
@@ -73,7 +94,7 @@ def rodar_receita(
                 pagina.clicar_texto(valor)  # opcional: a tela pode não aparecer
             elif tipo == "usuario":
                 if pagina.tem_campo("usuario"):
-                    pagina.preencher("usuario", credenciais.CREDENCIAIS[valor]["usuario"])
+                    pagina.preencher("usuario", credenciais.usuario(valor))
             elif tipo == "senha":
                 if not pagina.tem_campo("senha"):  # espera o campo; sem ele o passo "esperar" decide
                     continue

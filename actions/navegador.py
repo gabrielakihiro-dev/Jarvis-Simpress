@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict
 import navegador_jarvis as nj
 from actions._base import tool
 from login_receitas import RECEITAS, rodar_receita
-from sites import resolver_site
+from sites import resolver_site, variavel_faltando
 
 AVISO_DASHBOARD = " Atenção: a rotina Sebrae grava esta planilha a cada 30 min; editar agora pode colidir."
 HOST_ARG = {"type": "string", "description": "Host da URL atual (de ler_pagina ou navegar), ex.: 'sebraepr.softexpert.app'."}
@@ -37,6 +37,9 @@ def _aviso(a) -> str:
 def _navegar(a):
     url = resolver_site(str(a.get("alvo", "")))
     if not url:
+        faltando = variavel_faltando(str(a.get("alvo", "")))
+        if faltando:
+            return {"erro": f"Falta configurar {faltando} no arquivo .env do Jarvis."}
         return {"erro": "Só navego para sites do catálogo ou URLs http/https."}
 
     def fazer(page):

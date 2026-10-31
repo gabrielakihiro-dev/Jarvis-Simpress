@@ -21,7 +21,8 @@ class JanelaCredenciais(QDialog):
         aviso.setWordWrap(True)
         lay.addWidget(aviso)
         for cid, c in credenciais.CREDENCIAIS.items():
-            lay.addWidget(QLabel(f"<b>{c['rotulo']}</b> — {c['usuario']}"))
+            conta = credenciais.usuario(cid, obrigatorio=False) or f"configure {c['usuario_env']} no .env"
+            lay.addWidget(QLabel(f"<b>{c['rotulo']}</b> — {conta}"))
             linha = QHBoxLayout()
             estado = QLabel()
             campo = QLineEdit()
@@ -53,6 +54,8 @@ class JanelaCredenciais(QDialog):
         # Erro do keyring vira mensagem fixa na linha: nunca str(e), que poderia carregar a senha.
         try:
             fn()
+        except credenciais.ContaNaoConfigurada as e:
+            self._atualizar(cid, f"Configure {e.variavel} no .env")
         except Exception:
             self._atualizar(cid, "Cofre de senhas indisponível")
         else:

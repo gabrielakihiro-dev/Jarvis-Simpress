@@ -23,6 +23,7 @@ TIMEOUT_VARREDURA = 0.3
 
 ROTINAS_VALIDAS = ("login", "os", "inventarios", "ambas", "usuarios", "sebrae")
 DECISOES_VALIDAS = ("permitir", "recusar", "remover", "manter")
+ACOES_APELIDO_MANUAL = ("manter", "excluir")
 EXPORTACOES = {
     "equipamentos": "/api/exportar-equipamentos",
     "chamados": "/api/operacoes/chamados/exportar",
@@ -201,7 +202,7 @@ class SimpressClient:
             except httpx.TimeoutException:
                 return False, "O Simpress demorou demais para responder."
             except Exception as e:
-                return False, f"Falha na comunicação com o Simpress: {e}"
+                return False, f"Falha na comunicação com o Simpress: {limpar_texto_sensivel(str(e))[:200]}"
 
             if 200 <= res.status_code < 300:
                 try:
@@ -859,4 +860,149 @@ class SimpressClient:
             "execucao": _aparar({k: v for k, v in execucao.items() if k not in ("log", "capturas")}),
             "detalhes": linhas,  # 'detalhes' é chave de texto livre da máscara LGPD: nomes já conhecidos viram marcador
             "limitado": bool(dados.get("limitado")),
+        }
+
+    # --- chamados (histórico), Sebrae (histórico), usuário logado em lote e escritas do assistente do site ---
+
+    @staticmethod
+    def _id_valido(valor: str) -> bool:
+        return bool(re.fullmatch(r"[^/?#\\\s]{1,128}", valor))
+
+    def historico_chamados(self, limite: Any = 10) -> Dict[str, Any]:
+        """Importações do acompanhamento de chamados, da mais nova para a mais antiga."""
+        ok, dados = self._chamar("GET", "/api/operacoes/chamados/historico")
+        if not ok:
+            return {"erro": dados}
+        eventos = [e for e in (dados.get("eventos") if isinstance(dados, dict) else None) or [] if isinstance(e, dict)]
+        return {"total": len(eventos), "eventos": _aparar(eventos[: self._limite(limite, 10)])}
+
+    def snapshot_chamados(self, snapshot_id: Any) -> Dict[str, Any]:
+        """Uma importação reduzida a contagens e às primeiras linhas (série e relação de OS)."""
+        snapshot_id = str(snapshot_id or "").strip()
+        if not self._id_valido(snapshot_id):
+            return {"erro": "Identificador da importação inválido. Use historico_chamados."}
+        ok, dados = self._chamar("GET", f"/api/operacoes/chamados/snapshot/{snapshot_id}")
+        if not ok:
+            return {"erro": dados}
+        dados = dados if isinstance(dados, dict) else {}
+        chamados = [c for c in dados.get("chamados") or [] if isinstance(c, dict)]
+        fontes = dados.get("fontes") if isinstance(dados.get("fontes"), dict) else {}
+        return _aparar({
+            "id": dados.get("id", snapshot_id), "atualizado_em": dados.get("atualizado_em", ""),
+            "fontes": {k: (v.get("arquivo", "") if isinstance(v, dict) else "") for k, v in fontes.items()},
+            "resumo": dados.get("resumo") or {}, "total_chamados": len(chamados),
+            "chamados": [{"serie": c.get("serie", ""), "relacao": c.get("relacao", "")} for c in chamados[:MAX_ITENS_LISTA]],
+            "omitidos": max(0, len(chamados) - MAX_ITENS_LISTA),
+        })
+
+    def evolucao_chamados(self, anterior: Any, atual: Any) -> Dict[str, Any]:
+        """Séries novas, alteradas (só os nomes dos campos) e ausentes entre duas importações de chamados."""
+        anterior, atual = str(anterior or "").strip(), str(atual or "").strip()
+        if not self._id_valido(anterior) or not self._id_valido(atual):
+            return {"erro": "Informe os identificadores 'anterior' e 'atual' (de historico_chamados)."}
+        ok, dados = self._chamar("GET", "/api/operacoes/chamados/evolucao", params={"anterior": anterior, "atual": atual})
+        if not ok:
+            return {"erro": dados}
+        dados = dados if isinstance(dados, dict) else {}
+        mudancas = dados.get("mudancas") if isinstance(dados.get("mudancas"), dict) else {}
+        alterados = [
+            {"serie": c.get("serie", ""), "campos": [f.get("campo") for f in c.get("campos") or [] if isinstance(f, dict)]}
+            for c in mudancas.get("alterados") or [] if isinstance(c, dict)
+        ]
+        return _aparar({
+            "anterior": dados.get("anterior"), "atual": dados.get("atual"), "contagens": dados.get("contagens"),
+            "novos": mudancas.get("novos") or [], "alterados": alterados,
+            "ausentes_arquivo": mudancas.get("ausentes_arquivo") or [], "aviso": dados.get("aviso_ausentes", ""),
+        })
+
+    def historico_sebrae(self, entrada_id: Any = "", tipo: Any = "", limite: Any = 10) -> Dict[str, Any]:
+        """Importações e buscas do Sebrae (contagens); com `entrada_id`, o detalhe de uma entrada."""
+        entrada_id = str(entrada_id or "").strip()
+        if entrada_id:
+            if not self._id_valido(entrada_id):
+                return {"erro": "Identificador da entrada inválido."}
+            return self._leitura(f"/api/sebrae/historico/{entrada_id}")
+        params: Dict[str, Any] = {"limite": self._limite(limite, 10)}
+        if tipo in ("importacao", "busca"):
+            params["tipo"] = tipo
+        return self._leitura("/api/sebrae/historico", params)
+
+    def usuarios_logados(self, series: Any) -> Dict[str, Any]:
+        """Usuário logado e nome da pessoa de até MAX_ITENS_LISTA séries; só campos que a máscara LGPD conhece."""
+        lista = series if isinstance(series, list) else [series]
+        pedidas = list(dict.fromkeys(str(s).strip().upper() for s in lista if str(s or "").strip()))[:MAX_ITENS_LISTA]
+        if not pedidas:
+            return {"erro": "Informe ao menos uma série."}
+        ok, dados = self._chamar("POST", "/api/equipamentos/usuarios-logados", corpo={"series": pedidas})
+        if not ok:
+            return {"erro": dados}
+        usuarios = dados.get("usuarios") if isinstance(dados, dict) else None
+        itens: List[Dict[str, Any]] = []
+        for serie, bruto in (usuarios if isinstance(usuarios, dict) else {}).items():
+            d = bruto if isinstance(bruto, dict) else {}
+            item = {
+                "serie": serie, "usuario_logado": d.get("usuario", ""), "nome_pessoa": d.get("nome_pessoa", ""),
+                "origem": d.get("origem", ""), "computador": d.get("hostname", ""),
+                "computador_ambiguo": bool(d.get("hostname_ambiguo")),
+            }
+            if d.get("pendencia"):
+                item["pendencia"] = limpar_texto_sensivel(d["pendencia"])
+            itens.append(item)
+        return {"total": len(itens), "itens": _aparar(itens)}
+
+    # --- escritas (só após confirmação do usuário) ---
+
+    def registrar_transferencia(self, campos: Dict[str, Any]) -> Dict[str, Any]:
+        """Registra uma linha no histórico de transferências. Não gera a planilha de transferência."""
+        nomes = ("serial", "entrega_cnpj", "entrega_endereco", "entrega_contato", "entrega_cidade", "descricao_equipamento", "entrega_obs")
+        corpo = {n: str(campos.get(n) or "").strip() for n in nomes}
+        corpo["serial"] = corpo["serial"].upper()
+        if not all(corpo[n] for n in nomes[:4]):
+            return {"sucesso": False, "erro": "Informe serial, CNPJ, endereço e contato da entrega."}
+        if len(re.sub(r"\D", "", corpo["entrega_cnpj"])) != 14:
+            return {"sucesso": False, "erro": "Campo entrega_cnpj inválido: CNPJ deve conter exatamente 14 dígitos."}
+        corpo = {n: v for n, v in corpo.items() if v}
+        ok, dados = self._chamar("POST", "/api/historico-transferencias", corpo=corpo)
+        if not ok:
+            return {"sucesso": False, "erro": dados}
+        return {"sucesso": True, "mensagem": f"Transferência da série {corpo['serial']} registrada no histórico de transferências."}
+
+    def resolver_apelido_manual(self, evento_id: str, serial: str, acao: str) -> Dict[str, Any]:
+        evento_id, serial, acao = str(evento_id or "").strip(), str(serial or "").strip().upper(), str(acao or "").strip().lower()
+        if not self._id_valido(evento_id) or not self._id_valido(serial):
+            return {"sucesso": False, "erro": "Identificador do evento ou série inválido."}
+        if acao not in ACOES_APELIDO_MANUAL:
+            return {"sucesso": False, "erro": "Escolha 'manter' ou 'excluir'."}
+        feito = "Apelido manual mantido." if acao == "manter" else "Alteração manual removida; o apelido voltou a seguir as planilhas de origem."
+        return self._acao(f"/api/historico-comparacoes/{evento_id}/apelido-manual/{serial}", {"acao": acao}, feito)
+
+    def salvar_nome_pessoa(self, serial: str, nome: str) -> Dict[str, Any]:
+        """O login vem da consulta do próprio servidor, nunca do modelo. Nome vazio remove o nome manual."""
+        serial, nome = str(serial or "").strip().upper(), str(nome or "").strip()
+        if not self._id_valido(serial):
+            return {"sucesso": False, "erro": "Número de série inválido."}
+        ok, dados = self._chamar("POST", "/api/equipamentos/usuarios-logados", corpo={"series": [serial]})
+        usuarios = dados.get("usuarios") if ok and isinstance(dados, dict) else None
+        pessoa = usuarios.get(serial) if isinstance(usuarios, dict) else None
+        if not isinstance(pessoa, dict):
+            return {"sucesso": False, "erro": "Não foi possível consultar o usuário logado dessa série."}
+        corpo = {"serial": str(pessoa.get("serial_cadastro") or serial), "login_atual": str(pessoa.get("usuario") or "").strip(), "nome": nome}
+        return self._acao("/api/equipamento/nome-pessoa", corpo, "Nome da pessoa removido." if not nome else "Nome da pessoa salvo.")
+
+    def excluir_chamados_antigos(self) -> Dict[str, Any]:
+        ok, dados = self._chamar("DELETE", "/api/operacoes/chamados/historico/antigas")
+        if not ok:
+            return {"sucesso": False, "erro": dados}
+        removidas = dados.get("removidas", 0) if isinstance(dados, dict) else 0
+        return {"sucesso": True, "mensagem": f"{removidas} importação(ões) antiga(s) removida(s); a mais recente foi mantida."}
+
+    def recarregar_base(self) -> Dict[str, Any]:
+        """Troca os dados em memória pela planilha válida mais recente da pasta de entrada."""
+        ok, dados = self._chamar("POST", "/api/recarregar-base", corpo={})
+        if not ok:
+            return {"sucesso": False, "erro": dados}
+        dados = dados if isinstance(dados, dict) else {}
+        return {
+            "sucesso": True, "mensagem": f"Base recarregada de {limpar_texto_sensivel(dados.get('arquivo_origem', ''))}.",
+            "total_equipamentos": dados.get("total_equipamentos"),
         }

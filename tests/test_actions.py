@@ -16,11 +16,14 @@ NOMES_ESPERADOS = {
     "logar_site",
     "chamados_novos_sebrae", "chamados_antigos_abertos_sebrae", "estado_usuarios_entra", "listar_historico_alteracoes",
     "listar_apelidos_modificados", "evolucao_atualizacoes", "log_execucao_automacao",
+    "historico_chamados", "snapshot_chamados", "evolucao_chamados", "historico_sebrae", "usuarios_logados",
+    "registrar_transferencia", "resolver_apelido_manual", "salvar_nome_pessoa", "excluir_chamados_antigos", "recarregar_base",
 }
 MUTADORAS_ESPERADAS = {
     "executar_automacao_chrome", "cancelar_automacao_chrome", "atualizar_apelido",
     "atualizar_usuario", "decidir_pendencia_usuario", "salvar_unidade",
     "clicar_confirmado", "digitar_confirmado",
+    "registrar_transferencia", "resolver_apelido_manual", "salvar_nome_pessoa", "excluir_chamados_antigos", "recarregar_base",
 }
 
 

@@ -5,6 +5,7 @@ Gera áudio em português via Microsoft Edge TTS e reproduz em segundo plano
 """
 
 import asyncio
+import logging
 import os
 import re
 import subprocess
@@ -26,6 +27,7 @@ try:
 except ImportError:
     TTS_DISPONIVEL = False
 
+_logger = logging.getLogger(__name__)
 VOZ_PADRAO = os.environ.get("VOZ_NOME", "pt-BR-AntonioNeural")
 HABILITAR_VOZ = os.environ.get("HABILITAR_VOZ", "true").lower() in ("1", "true", "yes", "sim")
 
@@ -109,14 +111,14 @@ def _executar_reproducao(arquivo_mp3: str):
             timeout=40,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-    except Exception:
-        pass
+    except Exception:  # a fala nunca derruba o app
+        _logger.warning("Falha ao tocar a fala", exc_info=True)
     finally:
         try:
             if os.path.exists(arquivo_mp3):
                 os.remove(arquivo_mp3)
         except Exception:
-            pass
+            _logger.warning("Não apaguei o áudio temporário", exc_info=True)
 
 
 def _thread_falar(texto_fala: str, voz: str):
@@ -131,12 +133,13 @@ def _thread_falar(texto_fala: str, voz: str):
 
         # Toca o áudio
         _executar_reproducao(temp_path)
-    except Exception:
+    except Exception:  # a fala nunca derruba o app
+        _logger.warning("Falha ao gerar a fala", exc_info=True)
         if temp_path and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
             except Exception:
-                pass
+                _logger.warning("Não apaguei o áudio temporário", exc_info=True)
 
 
 def gerar_mp3(texto: str, voz: Optional[str] = None) -> Optional[str]:
@@ -150,7 +153,11 @@ def gerar_mp3(texto: str, voz: Optional[str] = None) -> Optional[str]:
         asyncio.run(_gerar_audio_edge(fala, caminho, voz or os.environ.get("VOZ_NOME", VOZ_PADRAO)))
         return caminho
     except Exception:
-        os.path.exists(caminho) and os.remove(caminho)
+        _logger.warning("Falha ao gerar o mp3 da fala", exc_info=True)
+        try:
+            os.path.exists(caminho) and os.remove(caminho)
+        except OSError:
+            _logger.warning("Não apaguei o áudio temporário", exc_info=True)
         return None
 
 

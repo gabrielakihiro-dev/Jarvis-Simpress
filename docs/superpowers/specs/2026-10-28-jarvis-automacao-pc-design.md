@@ -26,8 +26,8 @@ Catálogo inicial:
 | YouTube | `https://www.youtube.com` | nenhum |
 | Endpoint Central | `https://centralendpoint.pr.sebrae.com.br/webclient#/uems/inventory/computers` | próprio + Microsoft (passos a confirmar ao vivo) |
 | UX Simpress | `https://ux.simpress.com.br/MeusEquipamentos/Index` | próprio + Microsoft (passos a confirmar ao vivo) |
-| Dashboard (Operacional_SEBRAE) | `https://simpress-my.sharepoint.com/:x:/r/personal/jufsouza_simpress_com_br/_layouts/15/doc2.aspx?sourcedoc=%7Bbe6cb02e-6528-45f0-a4ca-224923818e90%7D&action=edit` | Microsoft: escolher `gansouza@simpress.com.br`, digitar a senha; MFA na 1ª vez do dia |
-| SoftExpert | `https://sebraepr.softexpert.app/softexpert/workspace?page=taskCenter` | clicar **SSO**, escolher `gakihiro@pr.sebrae.com.br`; PIN do Windows na 1ª vez do dia |
+| Dashboard (Operacional_SEBRAE) | `(link do .env: JARVIS_URL_DASHBOARD)` | Microsoft: escolher `conta@example.com`, digitar a senha; MFA na 1ª vez do dia |
+| SoftExpert | `https://sebraepr.softexpert.app/softexpert/workspace?page=taskCenter` | clicar **SSO**, escolher `conta@example.com`; PIN do Windows na 1ª vez do dia |
 
 (O link do Dashboard foi limpo dos parâmetros de sessão `wd*`.)
 
@@ -116,9 +116,9 @@ Dependências novas em `requirements.txt`: `playwright` (só o pacote; não prec
   `ir`, `clicar(texto)`, `escolher_conta(email)`, `preencher_usuario`, `preencher_senha`,
   `esperar(host)`. Exemplos:
   - Dashboard: abrir URL → se cair em `login.microsoftonline.com`, escolher
-    `gansouza@simpress.com.br` → senha de `Jarvis/microsoft-simpress` → esperar
+    `conta@example.com` → senha de `Jarvis/microsoft-simpress` → esperar
     `simpress-my.sharepoint.com`.
-  - SoftExpert: abrir URL → clicar "SSO" → escolher `gakihiro@pr.sebrae.com.br` → esperar
+  - SoftExpert: abrir URL → clicar "SSO" → escolher `conta@example.com` → esperar
     `sebraepr.softexpert.app`.
   - UX Simpress e Endpoint Central: passos levantados **ao vivo com o usuário** na fase 3.
 - **Hosts permitidos por credencial**: cada credencial tem uma lista fixa em código (ex.: a senha

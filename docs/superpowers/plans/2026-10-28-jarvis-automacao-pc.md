@@ -294,7 +294,7 @@ def test_prompt_trata_pagina_como_dado():
 
 **Interfaces:**
 - Produces:
-  - `CREDENCIAIS: Dict[str, Dict[str, Any]]` — `{"microsoft-simpress": {"rotulo": "Microsoft Simpress (Dashboard)", "usuario": "gansouza@simpress.com.br", "hosts": ("login.microsoftonline.com",)}}`. Task 9 pode acrescentar.
+  - `CREDENCIAIS: Dict[str, Dict[str, Any]]` — `{"microsoft-simpress": {"rotulo": "Microsoft Simpress (Dashboard)", "usuario": "conta@example.com", "hosts": ("login.microsoftonline.com",)}}`. Task 9 pode acrescentar.
   - `servico(cred_id: str) -> str` → `f"Jarvis/{cred_id}"`.
   - `salvar_senha(cred_id: str, senha: str) -> None` (vazia → `ValueError`), `tem_senha(cred_id) -> bool`, `apagar_senha(cred_id) -> None`, `senha(cred_id) -> Optional[str]`. Todas via `keyring` com `username = usuario`. `cred_id` fora de `CREDENCIAIS` → `KeyError`.
   - Nenhuma função loga nem inclui a senha em exceção.
@@ -325,8 +325,8 @@ def test_prompt_trata_pagina_como_dado():
 - Produces:
   - `Passo = Tuple[str, str]`; tipos: `("ir", url)`, `("clicar", texto)` (opcional: segue se não achar), `("escolher_conta", email)` (opcional), `("usuario", cred_id)` (opcional: só se o campo existir), `("senha", cred_id)`, `("esperar", host)` (último passo).
   - `RECEITAS: Dict[str, List[Passo]]`:
-    - `dashboard`: ir URL do catálogo → escolher_conta `gansouza@simpress.com.br` → usuario `microsoft-simpress` → senha `microsoft-simpress` → clicar `Sim` (tela "Continuar conectado?") → esperar `simpress-my.sharepoint.com`.
-    - `softexpert`: ir URL → clicar `SSO` → escolher_conta `gakihiro@pr.sebrae.com.br` → esperar `sebraepr.softexpert.app`.
+    - `dashboard`: ir URL do catálogo → escolher_conta `conta@example.com` → usuario `microsoft-simpress` → senha `microsoft-simpress` → clicar `Sim` (tela "Continuar conectado?") → esperar `simpress-my.sharepoint.com`.
+    - `softexpert`: ir URL → clicar `SSO` → escolher_conta `conta@example.com` → esperar `sebraepr.softexpert.app`.
   - Protocolo de página (`class PaginaLogin(Protocol)`): `host() -> str`, `ir(url) -> None`, `clicar_texto(texto) -> bool`, `tem_campo(tipo: "usuario"|"senha") -> bool`, `preencher(tipo, valor) -> None`. Adaptador real `navegador_jarvis.PaginaPlaywright(page)` (espera até 5 s por elemento; campo senha = `input[type=password]`, usuário = `input[type=email]` ou `name=loginfmt`).
   - `rodar_receita(site: str, pagina: PaginaLogin, obter_senha=credenciais.senha, agora=time.monotonic, dormir=time.sleep, espera_mfa_s: float = 120, intervalo_s: float = 2) -> Dict` → só `{"login": "ok"|"aguardando_mfa"|"falhou", "site": site}` e, em falha, `"motivo"` de uma lista fixa:
     - `"Senha não cadastrada. Use ⚙ › Credenciais…"`

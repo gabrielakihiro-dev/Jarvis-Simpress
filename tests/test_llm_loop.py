@@ -117,7 +117,7 @@ def test_erro_da_api_desfaz_mensagem_do_usuario():
     llm.client.chat = NS(completions=NS(create=llm.client.create))
     antes = len(llm.mensagens)
     r = llm.enviar_mensagem("oi")
-    assert "falhou" in r.texto and len(llm.mensagens) == antes
+    assert "falhou" not in r.texto and "OpenRouter" in r.texto and len(llm.mensagens) == antes  # detalhe cru só no log
 
 
 def test_resposta_grande_e_cortada_depois_da_mascara():

@@ -91,7 +91,7 @@ def main():
     llm = LLMClient(simpress)
 
     # Checagem de chave inicial
-    api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip() or os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not api_key or api_key.startswith("sk-or-v1-coloque"):
         console.print(Panel(
             "[bold yellow]Atenção: Chave do OpenRouter não encontrada![/bold yellow]\n\n"

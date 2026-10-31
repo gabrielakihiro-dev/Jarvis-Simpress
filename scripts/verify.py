@@ -1,13 +1,16 @@
-"""Verificação local e de CI: compileall, pytest e busca de credenciais nos arquivos rastreados."""
+"""Verificação local e de CI: compileall, pytest e busca de credenciais e e-mails pessoais nos arquivos rastreados."""
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
-PADROES = [re.compile(r"sk-or-[A-Za-z0-9-]{20,}"), re.compile(r"OPENROUTER_API_KEY\s*=\s*(?!\S*\.\.\.)\S{10,}")]  # "..." = placeholder em mensagens
-EXCLUIR = r"[\/](\.venv|\.venv313|\.venv-leve|\.claude|\.git|data|modelos_voz)([\/]|$)"
+PADROES = [re.compile(r"sk-or-[A-Za-z0-9-]{20,}"), re.compile(r"(?:OPENROUTER|DEEPSEEK)_API_KEY\s*=\s*(?!\S*\.\.\.)\S{10,}")]  # "..." = placeholder em mensagens
+EXCLUIR = r"[\/](\.venv|\.venv313|\.claude|\.git|data|modelos_voz)([\/]|$)"
 IGNORADOS = {".env.example", "scripts/verify.py"}  # o script contém os próprios padrões
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
+# e-mails de exemplo/teste passam; qualquer outro em arquivo rastreado é tratado como pessoal
+DOMINIOS_FICTICIOS = re.compile(r"(?:^|\.)(?:example\.(?:com|org|net)|exemplo\.com|empresa\.com|x\.com)$", re.IGNORECASE)
 
 
 def comando(nome, args):
@@ -21,17 +24,26 @@ def credenciais():
     if r.returncode != 0:
         print(r.stderr.strip() or "git ls-files falhou")
         return False
-    achados = []
+    achados, emails = [], []
     for rel in r.stdout.splitlines():
         if rel in IGNORADOS or not (RAIZ / rel).is_file():
             continue
         try:
-            linhas = (RAIZ / rel).read_text(encoding="utf-8", errors="ignore").splitlines()
+            bruto = (RAIZ / rel).read_bytes()
         except OSError:
             continue
+        if b"\0" in bruto:  # binário (PNG etc.)
+            continue
+        linhas = bruto.decode("utf-8", errors="ignore").splitlines()
         achados += [f"{rel}:{n}" for n, l in enumerate(linhas, 1) if any(p.search(l) for p in PADROES)]
+        # shortcut: só o arquivo:linha é impresso, nunca o e-mail; docs/ de exemplo devem usar example.com.
+        emails += [f"{rel}:{n}" for n, l in enumerate(linhas, 1)
+                   if any(not DOMINIOS_FICTICIOS.search(m.group(1)) for m in EMAIL.finditer(l))]
     for a in achados:
         print("possível credencial em", a)
+    for a in emails:
+        print("possível e-mail pessoal em", a, "(use example.com ou uma variável do .env)")
+    achados += emails
     return not achados
 
 

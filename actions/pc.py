@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import navegador_jarvis
 from actions._base import tool
-from sites import CATALOGO, normalizar, resolver_site
+from sites import CATALOGO, normalizar, resolver_site, variavel_faltando
 
 MAX_ALVOS = 10
 
@@ -45,6 +45,10 @@ def abrir_alvos(
         if url:
             urls.append(url)
             resultados.append({"alvo": alvo, "aberto": "site"})
+            continue
+        faltando = variavel_faltando(alvo)
+        if faltando:
+            resultados.append({"alvo": alvo, "erro": f"Falta configurar {faltando} no arquivo .env do Jarvis."})
             continue
         if ":" in alvo and "/" in alvo:  # esquema não permitido (file:, ftp:...) não vira busca de atalho
             resultados.append({"alvo": alvo, "erro": "Só abro sites http/https, nomes do catálogo ou programas do Menu Iniciar."})
